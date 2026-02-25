@@ -1,0 +1,353 @@
+{-# LANGUAGE MultilineStrings #-}
+module PieceOfFlake.UrlEncoder where
+import Data.Binary.Builder
+    ( Builder, toLazyByteString, fromByteString )
+import Data.List ((\\), nub)
+import Data.List.NonEmpty qualified as NL
+import Data.Map.Strict qualified as M
+import Data.Text qualified as T
+import Data.Time ( UTCTime(UTCTime), fromGregorian )
+import Data.Version (showVersion)
+import PieceOfFlake.Nix
+import PieceOfFlake.Prelude
+import Network.HTTP.Types
+    ( decodePath, encodePathSegments, extractPath )
+import Nix
+import Nix.Atoms ( NAtom(NURI) )
+import Nix.Standard ( runWithBasicEffectsIO )
+import Paths_a_piece_of_flake ( version )
+import Prettyprinter (layoutSmart, defaultLayoutOptions, PageWidth (..), LayoutOptions (..))
+import Prettyprinter.Render.Text (renderStrict)
+import System.Environment.Blank (getEnvDefault)
+import Text.PrettyPrint.Leijen.Text (linebreak, text, putDoc, vcat, indent)
+import Text.Regex.TDFA ( (=~) )
+import UnliftIO.Directory ( doesFileExist, makeAbsolute )
+
+
+runUrlEncoder :: IO ()
+runUrlEncoder = runUrlEncoderWith . fmap toText =<< getArgs
+
+runUrlEncoderWith :: [Text] -> IO ()
+runUrlEncoderWith (cmd:args@(_:_))
+  | cmd `elem` ["i", "init"] = do
+      argsMap <- M.mapKeys argToAtr <$> parsePath args
+      withUrl argsMap (insertLfiIntoFlake curDirFlakeFile)
+  | cmd `elem` ["m", "merge"] = mergeCmdArgsIntoFlakeUrl curDirFlakeFile args
+  | cmd `elem` ["r", "x", "remove"] = removeAttrsFromFlakeInputUrl curDirFlakeFile args
+runUrlEncoderWith (cmd:args)
+  | cmd `elem` ["--version", "-v", "v"] = do
+    putStrLn $ "A Piece Of Flake " <> showVersion version
+    exitFailure
+  | cmd  `elem` ["p", "print"] = prettyPrintLfi curDirFlakeFile args
+  | cmd `elem` ["-h", "-help", "--help", "help", "h"] = printHelp
+runUrlEncoderWith [] = printHelp
+runUrlEncoderWith args =
+  mergeCmdArgsWithFlakeUrlArgsAndPrintAsUrl curDirFlakeFile args
+
+curDirFlakeFile :: FilePath
+curDirFlakeFile = "./flake.nix"
+
+printHelp :: MonadIO m => m ()
+printHelp = do
+  putStrLn """A Piece Of Flake (LFI) URL encoder
+    Usage: nix build $(e -an1 true \\
+                         -an2 null \\
+                         -an3 12 \\
+                         -an4 hello world \\
+                         -an5 [ 1 2 ] \\
+                         -an6 "{x = 1; y = 2; }" \\
+                         -an7 x: x + 1\\
+                         -an8 \\(1 + 2\\) )
+
+    Mail purpose of "e" command is generating flake overriding input URL
+    out of arbitrary command line arguments.
+
+    The result is a non-flake URL input:
+    nix build --override-input c https://lficom.me/an1/true/an2/null/an3/42/an4/%22hello%20world%22/an5/%5B%201%202%20%5D/an6/%7Bx%20=%201%3B%20y%20=%202%3B%20%7D/an7/a:%20a%20+%201/.tar
+
+    LFI web service responds with a Nix attribute set corresponding
+    to the URL path. Nix values are verified with hnix interpreter.
+
+    URL prefix can be overriden via environment variable LFI_SITE.
+
+    If you copy the URL into a flake file as a default value URL then
+    drop ".tar" suffix, but it is easier to use auxiliary "e" commands
+    for handling a piece of flake URLs in a flake file.
+
+    e p   - print attributes from an input URL in flake file
+            with overrides from command line arguments as
+            a pretty-printed Nix attrset.
+
+      $ e p -an1 true -an2 null -an3 12 -an4 hello world -an5 [ 1 2 ] \\
+            -an6 "{x = 1; y = 2; }" -an7 x: x + 1 -an8 \\(1 + 2\\)
+    { ... }:
+      {
+        an1 = true;
+        an2 = null;
+        an3 = 12;
+        an4 = "hello world";
+        an5 = [ 1 2 ];
+        an6 = {
+          x = 1;
+          y = 2;
+        };
+        an7 = x:
+          x + 1;
+        an8 = 1 + 2;
+        static = false;
+      }
+
+    e x   - remove specified attributes from flake input URL
+
+      $ e x an1 an4
+
+    e m   - merge attributes form command line arguments into
+            flake input URL in flake file
+
+      $ e m -an1 false
+
+    e i   - init - add new non-flake input to flake file or
+            completely override URL of flake input if it already exists.
+
+      $ e i -an1 true
+
+    Project home page https://github.com/yaitskov/a-piece-of-flake"""
+  exitFailure
+posixEpoch :: UTCTime
+posixEpoch = UTCTime d 0
+  where
+    d = fromGregorian 1970 1 1
+
+parsePath :: (MonadFail m, MonadIO m) => [Text] -> m (Map ArgName Text)
+parsePath args =
+  case fmap (quoteUnquotedString . joinArgValueWords) <$> groupByAttrName args of
+    Left e -> putStrLn (toString e) >> exitFailure
+    Right m -> do
+      let opts = defaultOptions posixEpoch
+      (goodAtrs, badAtrs) <- M.partition isRight <$> M.traverseWithKey (go opts) m
+      if null badAtrs then
+        pure $ M.mapMaybe rightToMaybe goodAtrs
+      else
+        do
+          liftIO $ putDoc $ text "Invalid attribute(s):" <> linebreak <>
+            idnt4 (vcat . mapMaybe leftToMaybe $ M.elems badAtrs) <>
+            linebreak
+          exitFailure
+  where
+    idnt4 = indent 4
+    go opts (ArgName an) av = do
+      validateNixExpr opts av >>= \case
+        Left e -> pure . Left $
+          (text (toLazy an) <> linebreak <> (idnt4 . vcat . fmap (text . toLazy) $ lines e))
+        Right () -> pure $ Right av
+
+withUrl :: MonadIO m => Map AtrName Text -> (Builder -> m ()) -> m ()
+withUrl args cb = do
+  siteRoot <- toText <$> liftIO (getEnvDefault "LFI_SITE" siteRootDef)
+  cb $ mkLfiUrl siteRoot args
+  where
+    siteRootDef = "https://lficom.me"
+
+newtype ArgName = ArgName { unArgName :: Text } deriving newtype (Eq, Show, Ord)
+newtype AtrName = AtrName { unAtrName :: Text } deriving newtype (Eq, Show, Ord)
+
+argToAtr :: ArgName -> AtrName
+argToAtr (ArgName s) = AtrName (T.drop 1 s)
+
+isAtrName :: Text -> Bool
+isAtrName = (=~ ("^[-][a-zA-Z_][a-zA-Z0-9_-]*[a-zA-Z0-9_]*$" :: Text))
+
+groupByAttrName :: [Text] -> Either Text (Map ArgName (NonEmpty Text))
+groupByAttrName [] = Right M.empty
+groupByAttrName [a] = Left $ "Attribute [" <> a <> "] has no value"
+groupByAttrName (atrN:argsLeft)
+  | isAtrName atrN =
+      case break isAtrName argsLeft of
+        (atrVs, nextAtr) ->
+          case nonEmpty atrVs of
+            Nothing -> Left $ "Attribute [" <> atrN <> "] has no value"
+            Just neAtrVs ->
+              M.insert (ArgName atrN) neAtrVs <$> groupByAttrName nextAtr
+  | otherwise = Left $ "Attribute name [" <> atrN <> "] is not valid"
+
+joinArgValueWords :: NonEmpty Text -> Text
+joinArgValueWords =  unwords . NL.toList
+
+
+validateNixExpr :: MonadIO m => Options -> Text -> m (Either Text ())
+validateNixExpr o nxe =
+  case parseNixTextLoc nxe of
+    Left e ->
+      pure . Left $ "[" <> nxe <>  "] is bad Nix expression due:" <> show e
+    Right e ->
+      liftIO $ runWithBasicEffectsIO o $ do
+        !_ <- getNormForm e
+        pure $ Right ()
+  where
+    getNormForm = normalForm <=< nixEvalExprLoc mempty
+
+mkLfiUrl :: Text -> Map AtrName Text -> Builder
+mkLfiUrl siteRoot w =
+  fromByteString (encodeUtf8 siteRoot) <>
+  encodePathSegments (flatpairs $ M.toList w)
+  where
+   flatpairs :: [(AtrName, Text)] -> [Text]
+   flatpairs [] = []
+   flatpairs ((AtrName an, av):t) = an : av : flatpairs t
+
+prettyPrintLfi :: (MonadFail m, MonadIO m) => FilePath -> [Text] -> m ()
+prettyPrintLfi flakeFile printArgsOverride =
+  withFlakeInputUrlFromFile flakeFile printUrlAsAtrSet
+  where
+    layout =
+      layoutSmart defaultLayoutOptions { layoutPageWidth = AvailablePerLine 20 1 }
+    printUrlAsAtrSet url = do
+      overMap :: Map Text Text <-  M.mapKeys (unAtrName . argToAtr) <$> parsePath printArgsOverride
+      case decodePath . extractPath $ encodeUtf8 url of
+        (pathSegs, _qa) ->
+          let NixDer bindings = translate @PlainNix pathSegs in
+          case parseNixTextLoc . toText . renderNixDer . NixDer . M.toList $ overMap <> M.fromList bindings of
+            Left e -> fail $ "Cannot parse attr set of url: " <> show e
+            Right atrs -> putTextLn . renderStrict . layout . prettyNix $ stripAnnotation atrs
+
+withFlakeInputUrlFromFile :: (MonadFail m, MonadIO m) => FilePath -> (Text -> m ()) -> m ()
+withFlakeInputUrlFromFile flakeFile cb =
+  doesFileExist flakeFile >>= \case
+  True -> do
+    flakeFileContent :: Text <- decodeUtf8 <$> readFileBS flakeFile
+    case flakeInputUrlFromText flakeFileContent of
+      Left e -> fail e
+      Right url -> cb url
+  False -> do
+    absFf <- makeAbsolute flakeFile
+    fail $ "Flake file [" <> absFf <> "] does not exist"
+
+flakeInputUrlFromText :: Text -> Either String Text
+flakeInputUrlFromText flakeContent =
+  case parseNixTextLoc flakeContent of
+    Left e -> fail $ "Failed to parse flake due" <> show e
+    Right ast ->
+      case inputsUrlCBinding ast of
+        Nothing ->
+          fail "Flake file not have input [c] or url of the input is missing"
+        Just (Ann _ (NConstant (NURI curUr))) ->
+          pure curUr
+        Just (Ann _ (NStr (DoubleQuoted [Plain curUr]))) ->
+          pure curUr
+        Just (Ann _ (NStr (Indented _ [Plain curUr]))) ->
+          pure curUr
+        Just (Ann _ unsupported) ->
+          fail $ "c input url is not a string but: " <> show unsupported
+
+mergeCmdArgsWithFlakeUrlArgsAndPrintAsUrl :: (MonadFail m, MonadIO m) => FilePath -> [Text] -> m ()
+mergeCmdArgsWithFlakeUrlArgsAndPrintAsUrl flakeFile cmdArgsOverride =
+  withFlakeInputUrlFromFile flakeFile printUrlAsAtrSet
+  where
+    printUrlAsAtrSet url = do
+      overMap <-  M.mapKeys argToAtr <$> parsePath cmdArgsOverride
+      case decodePath . extractPath $ encodeUtf8 url of
+        (pathSegs, _qa) ->
+          let
+            NixDer bindings = translate @PlainNix pathSegs
+            argsFromFlake :: Map AtrName Text = M.mapKeys AtrName $ M.fromList bindings
+          in
+            withUrl
+              (overMap <> argsFromFlake)
+              (liftIO . putLBSLn . toLazyByteString . ( "--override-input c " <>) . (<> "/.tar"))
+
+removeAttrsFromFlakeInputUrl :: (MonadFail m, MonadIO m) => FilePath -> [Text] -> m ()
+removeAttrsFromFlakeInputUrl flakeFile attrsToRemove = do
+  doesFileExist flakeFile >>= \case
+    True -> updateFlakeFile
+    False -> do
+      absFf <- makeAbsolute flakeFile
+      fail $ "Flake file [" <> absFf <> "] does not exist"
+  where
+    updateFlakeFile = do
+      flakeFileContent :: Text <- decodeUtf8 <$> readFileBS flakeFile
+      case flakeInputUrlFromText flakeFileContent of
+        Left e -> fail e
+        Right url ->
+          case decodePath . extractPath $ encodeUtf8 url of
+            (pathSegs, _qa) ->
+              let
+                NixDer bindings = translate @PlainNix pathSegs
+                argsFromFlake :: Map AtrName Text = M.mapKeys AtrName $ M.fromList bindings
+                argsFromFlake' = foldl' (flip M.delete) argsFromFlake $ fmap AtrName attrsToRemove
+                missingAtrs = attrsToRemove \\ fmap unAtrName (M.keys argsFromFlake)
+              in
+                if nub attrsToRemove == attrsToRemove
+                then
+                  if null missingAtrs
+                  then
+                    withUrl
+                      argsFromFlake'
+                      (\b ->
+                         case insertLfiIntoFlakeBody flakeFileContent b of
+                           Left e -> fail e
+                           Right flakeFileContent' -> writeFileText flakeFile flakeFileContent')
+                  else
+                   fail . toString $ "Unknown attribute(s): " <> T.intercalate ", " missingAtrs
+               else
+                 fail . toString $ "Duplicated attribute(s): " <> T.intercalate ", " (attrsToRemove \\ nub attrsToRemove)
+
+mergeCmdArgsIntoFlakeUrl :: (MonadFail m, MonadIO m) => FilePath -> [Text] -> m ()
+mergeCmdArgsIntoFlakeUrl flakeFile mergeArgs = do
+  doesFileExist flakeFile >>= \case
+    True -> updateFlakeFile
+    False -> do
+      absFf <- makeAbsolute flakeFile
+      fail $ "Flake file [" <> absFf <> "] does not exist"
+  where
+    updateFlakeFile = do
+      flakeFileContent :: Text <- decodeUtf8 <$> readFileBS flakeFile
+      case flakeInputUrlFromText flakeFileContent of
+        Left e -> fail e
+        Right url ->
+          case decodePath . extractPath $ encodeUtf8 url of
+            (pathSegs, _qa) ->
+              let
+                NixDer bindings = translate @PlainNix pathSegs
+                argsFromFlake :: Map AtrName Text = M.mapKeys AtrName $ M.fromList bindings
+              in do
+                cmdArgsMap <- M.mapKeys argToAtr <$> parsePath mergeArgs
+                withUrl
+                  (cmdArgsMap <> argsFromFlake)
+                  (\b ->
+                     case insertLfiIntoFlakeBody flakeFileContent b of
+                       Left e -> fail e
+                       Right flakeFileContent' -> writeFileText flakeFile flakeFileContent')
+
+insertLfiIntoFlakeBody :: Text -> Builder -> Either String Text
+insertLfiIntoFlakeBody flakeFileContent url =
+  case parseNixTextLoc flakeFileContent of
+    Left e -> fail $ "Failed to parse flake due: " <> show e
+    Right ast ->
+      case inputsUrlCBinding ast of
+        Nothing ->
+          case inputsFirstBindingPos ast of
+            Nothing -> fail "Flake does not have inputs"
+            Just inputsPos ->
+              pure $ insertInputC
+                (renderInputsEntry (snd inputsPos) (decodeUtf8 $ toLazyByteString url))
+                (fst inputsPos)
+                flakeFileContent
+        Just oldUrl ->
+          pure $ insertUrlCInput
+            oldUrl
+            (mkConst (NURI (decodeUtf8 $ toLazyByteString url)))
+            flakeFileContent
+
+insertLfiIntoFlake :: (MonadFail m, MonadIO m) => FilePath -> Builder -> m ()
+insertLfiIntoFlake flakeFile url =
+  doesFileExist flakeFile >>= \case
+    True -> updateFlakeFile
+    False -> do
+      absFf <- makeAbsolute flakeFile
+      fail $ "Flake file [" <> absFf <> "] does not exist"
+  where
+    updateFlakeFile = do
+      flakeFileContent <- decodeUtf8 <$> readFileBS flakeFile
+      case insertLfiIntoFlakeBody flakeFileContent url of
+        Left e -> fail e
+        Right flakeFileContent' -> writeFileText flakeFile flakeFileContent'

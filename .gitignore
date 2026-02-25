@@ -1,0 +1,13 @@
+/result
+/stress/l
+*.log
+*.pem
+*.csr
+/1
+/niv
+.haddock-ref
+.*ndc
+.*ndc-*-link
+/design
+/dist-newstyle
+/result-2

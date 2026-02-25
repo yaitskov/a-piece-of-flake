@@ -1,0 +1,160 @@
+cabal-version: 3.0
+name:          a-piece-of-flake
+version:       0.0.1
+
+synopsis:      Nix flake repository for everyone
+description:
+    The web service provides a Nix flake repository that aims to provide
+    smooth experience for publishing flakes.
+
+    == Service
+    #service#
+
+    The service is already deployed at
+    <https://localhost:3001 a-piece-of-flake>
+
+    == Development environment
+    #development-environment#
+
+    > $ nix develop
+    > $ emacs &
+    > $ cabal build
+    > $ cabal test
+
+    == Release
+    #release#
+
+    > $ nix build
+    > $ ./result/bin/a-piece-of-flake run
+
+    == Installation
+    #installation#
+
+    === NixOS module
+    #nixos-module#
+
+    ==== NixOS with flakes
+    #nixos-with-flakes#
+
+    Modify @\/etc\/nixos\/flake.nix@ as follows:
+
+    >   # ...
+    >   inputs = {
+    >     # ...
+    >     a-piece-of-flake.url = "github:yaitskov/a-piece-of-flake";
+    >   };
+
+    >   # ...
+    >         modules = [
+    >           a-piece-of-flake.nixosModules.${system}.default
+    >           ({ ... }: {
+    >             programs.a-piece-of-flake = {
+    >               enable = true;
+    >               port = 3000;
+    >             };
+    >           })
+    >           ./configuration.nix
+    >         ];
+
+    ==== NixOS without flakes
+    #nixos-without-flakes#
+
+    >   let
+    >     pof = builtins.fetchGit "htts://github.com/yaitskov/a-piece-of-flake.git?ref=master";
+    >   in {
+    >   imports =
+    >     [ # ... ./hardware-configuration.nix
+    >       "${pof}/nixos/non-flake-lfi.nix"
+    >     ];
+
+    >   programs = {
+    >     a-piece-of-flake = {
+    >       port = 3000;
+    >       enable = true;
+    >     };
+    >   };
+homepage:      http://github.com/yaitskov/a-piece-of-flake
+license:       BSD-3-Clause
+license-file:  LICENSE
+author:        Daniil Iaitskov
+maintainer:    dyaitskov@gmail.com
+copyright:     Daniil Iaitkov 2026
+category:      System
+build-type:    Simple
+bug-reports:   https://github.com/yaitskov/a-piece-of-flake/issues
+extra-source-files:
+  assets/favicon.svg
+  assets/github.svg
+  assets/sitemap.xml
+  assets/github.svg
+  assets/app.js
+
+extra-doc-files:
+  changelog.md
+tested-with:
+  GHC == 9.12.2
+
+source-repository head
+  type:
+    git
+  location:
+    https://github.com/yaitskov/a-piece-of-flake.git
+
+common base
+  default-language: GHC2024
+  ghc-options: -Wall
+  default-extensions:
+    DefaultSignatures
+    NoImplicitPrelude
+    OverloadedStrings
+    TemplateHaskell
+  build-depends:
+      base >=4.7 && < 5
+    , optparse-applicative < 1
+    , relude >= 1.2.2 && < 2
+    , tagged < 1
+    , unliftio < 1
+    , yesod-core < 1.8
+
+library
+  import: base
+  hs-source-dirs: src
+  exposed-modules:
+    PieceOfFlake.CmdArgs
+    PieceOfFlake.CmdRun
+    PieceOfFlake.Flake
+    PieceOfFlake.Page
+    PieceOfFlake.Prelude
+    PieceOfFlake.Th
+  other-modules:
+    Paths_a_piece_of_flake
+  autogen-modules:
+    Paths_a_piece_of_flake
+  build-depends:
+    , aeson                   < 3
+    , binary                  < 1
+    , file-embed              < 1
+    , full-text-search        < 1
+    , hnix                    < 1
+    , http-types              < 1
+    , monad-logger            < 1
+    , prettyprinter           < 2
+    , ref-tf                  < 1
+    , regex-tdfa              < 2
+    , tar                     < 1
+    , template-haskell        < 3
+    , text-zipper             < 1
+    , time                    < 2
+    , trace-embrace           < 2
+    , warp                    < 4
+    , warp-tls                < 4
+    , wl-pprint-text          < 2
+
+
+executable a-piece-of-flake
+  import: base
+  ghc-options: -Wall -threaded
+  main-is: PieceOfFlake.hs
+  hs-source-dirs: app
+  build-depends:
+    , a-piece-of-flake

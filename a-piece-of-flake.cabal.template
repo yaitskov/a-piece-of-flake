@@ -1,0 +1,90 @@
+cabal-version: 3.0
+name:          a-piece-of-flake
+version:       0.0.1
+
+synopsis:      Nix flake repository for everyone
+description:
+homepage:      http://github.com/yaitskov/a-piece-of-flake
+license:       BSD-3-Clause
+license-file:  LICENSE
+author:        Daniil Iaitskov
+maintainer:    dyaitskov@gmail.com
+copyright:     Daniil Iaitkov 2026
+category:      System
+build-type:    Simple
+bug-reports:   https://github.com/yaitskov/a-piece-of-flake/issues
+extra-source-files:
+    assets/favicon.svg
+    assets/github.svg
+    assets/sitemap.xml
+    assets/github.svg
+    assets/app.jse
+extra-doc-files:
+  changelog.md
+tested-with:
+  GHC == 9.12.2
+
+source-repository head
+  type:
+    git
+  location:
+    https://github.com/yaitskov/a-piece-of-flake.git
+
+common base
+  default-language: GHC2024
+  ghc-options: -Wall
+  default-extensions:
+    DefaultSignatures
+    NoImplicitPrelude
+    OverloadedStrings
+    TemplateHaskell
+  build-depends:
+      base >=4.7 && < 5
+    , optparse-applicative < 1
+    , relude >= 1.2.2 && < 2
+    , tagged < 1
+    , unliftio < 1
+    , yesod-core < 1.8
+
+library
+  import: base
+  hs-source-dirs: src
+  exposed-modules:
+    PieceOfFlake.CmdArgs
+    PieceOfFlake.CmdRun
+    PieceOfFlake.Flake
+    PieceOfFlake.Page
+    PieceOfFlake.Prelude
+    PieceOfFlake.Th
+  other-modules:
+    Paths_a_piece_of_flake
+  autogen-modules:
+    Paths_a_piece_of_flake
+  build-depends:
+    , aeson                   < 3
+    , binary                  < 1
+    , file-embed              < 1
+    , full-text-search        < 1
+    , hnix                    < 1
+    , http-types              < 1
+    , monad-logger            < 1
+    , prettyprinter           < 2
+    , ref-tf                  < 1
+    , regex-tdfa              < 2
+    , tar                     < 1
+    , template-haskell        < 3
+    , text-zipper             < 1
+    , time                    < 2
+    , trace-embrace           < 2
+    , warp                    < 4
+    , warp-tls                < 4
+    , wl-pprint-text          < 2
+
+
+executable a-piece-of-flake
+  import: base
+  ghc-options: -Wall -threaded
+  main-is: PieceOfFlake.hs
+  hs-source-dirs: app
+  build-depends:
+    , a-piece-of-flake
