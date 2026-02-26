@@ -6,6 +6,7 @@ import Data.Version (showVersion)
 import Language.Haskell.TH.Syntax (qLocation)
 import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.CmdArgs ( CmdArgs(..), CertKey, Cert )
+import PieceOfFlake.Flake (mkFlakeRepo)
 import PieceOfFlake.Prelude
 import Network.Wai.Handler.WarpTLS ( runTLS, tlsSettings, TLSSettings )
 import Network.Wai.Handler.Warp
@@ -27,6 +28,7 @@ import Yesod.Core
       Application,
       Yesod(makeLogger, messageLoggerSource) )
 import Yesod.Core.Types ( Logger )
+
 
 mkSettings :: Ypp -> CmdArgs -> Logger -> Settings
 mkSettings yp ca logger =
@@ -63,7 +65,7 @@ runCmd :: CmdArgs -> IO ()
 runCmd = \case
   rs@RunService {} -> do
     $(trIo "start/rs")
-    let y = Ypp
+    y <- Ypp <$> mkFlakeRepo
     logger <- makeLogger y
     case liftA2 mkTlsSettings rs.certFile rs.keyFile of
       Nothing -> runPlain (mkSettings y rs logger) =<< toWaiApp y

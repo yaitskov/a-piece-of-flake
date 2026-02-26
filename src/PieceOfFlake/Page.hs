@@ -13,9 +13,9 @@ import Yesod.Core
 
 -- import UnliftIO.Exception ( stringException, throwIO )
 
-data Ypp
+newtype Ypp
   = Ypp
-    {
+    { repo :: FlakeRepo
     }
 
 mkYesod "Ypp" [parseRoutes|
@@ -136,5 +136,7 @@ baseCss =
 
 postSubmitFlakeR :: HandlerFor Ypp ()
 postSubmitFlakeR = do
-  requireCheckJsonBody >>= \(FlakeUrl a) ->
+  requireCheckJsonBody >>= \fu@(FlakeUrl a) -> do
+    Ypp repo <- getYesod
+    trySubmitFlakeToRepo repo fu
     putStrLn $ "Register flake " <> show ( $(tw "!/a") a)

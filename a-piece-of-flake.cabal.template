@@ -42,7 +42,7 @@ common base
     OverloadedStrings
     TemplateHaskell
   build-depends:
-      base >=4.7 && < 5
+    , base >=4.7 && < 5
     , optparse-applicative < 1
     , relude >= 1.2.2 && < 2
     , tagged < 1
@@ -75,6 +75,8 @@ library
     , prettyprinter           < 2
     , ref-tf                  < 1
     , regex-tdfa              < 2
+    , stm-containers          < 2
+    , stm                     < 3
     , tar                     < 1
     , template-haskell        < 3
     , text-zipper             < 1
