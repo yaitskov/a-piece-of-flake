@@ -4,7 +4,6 @@
 {-# LANGUAGE MultilineStrings #-}
 module PieceOfFlake.Page where
 
--- import Data.Aeson.Types
 import Data.Binary.Builder (fromByteString)
 import Data.ByteString qualified as BS
 import PieceOfFlake.Th ( includeFile )
@@ -53,7 +52,6 @@ getFaviconR = pure $ FavIcon $(includeFile "assets/favicon.svg")
 
 getGitHubR :: Handler FavIcon
 getGitHubR = pure $ FavIcon $(includeFile "assets/github.svg")
-
 
 getSiteMapR :: Handler TypedContent
 getSiteMapR = pure . TypedContent typeXml $ toContent $(includeFile "assets/sitemap.xml")
@@ -139,4 +137,4 @@ baseCss =
 postSubmitFlakeR :: HandlerFor Ypp ()
 postSubmitFlakeR = do
   requireCheckJsonBody >>= \(FlakeUrl a) ->
-    putStrLn $ "Register flake " <> show a
+    putStrLn $ "Register flake " <> show ( $(tw "!/a") a)

@@ -2,9 +2,11 @@
 # nix develop ./.ndc
 {
   inputs = {
-    c = { url = https://lficom.me/static/false; flake = false; };
+    c = { url = https://lficom.me/ghc/%22ghc9122%22/static/false; flake = false; };
     nixpkgs.url = "github:NixOS/nixpkgs/bc16855ba53f3cb6851903a393e7073d1b5911e7";
     flake-utils.url = "github:numtide/flake-utils";
+    adf.url = "github:yaitskov/add-dependent-file";
+    te = { url = "github:yaitskov/trace-embrace"; flake = false; };
     uphack = {
       url = "github:yaitskov/upload-doc-to-hackage";
       flake = false;
@@ -21,7 +23,7 @@
   outputs = inputs@{ self, nixpkgs, flake-utils, uphack, c, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        ghcName = "ghc9122";
+        cas = import c {};
         packageName = "a-piece-of-flake";
         hnix-overlay = final: prev: {
           hnix-store-json =
@@ -33,6 +35,10 @@
             final.callCabal2nix "hnix-store-nar" "${inputs.hnix-store}/hnix-store-nar" { };
           hnix-store-core =
             final.callCabal2nix "hnix-store-core" "${inputs.hnix-store}/hnix-store-core" { };
+          trace-embrace =
+            final.callCabal2nix "trace-embrace" inputs.te { };
+          add-dependent-file =
+            final.callCabal2nix "add-dependent-file" inputs.adf { };
           hnix-store-remote =
             dontHaddock
               (final.callCabal2nix "hnix-store-remote" "${inputs.hnix-store}/hnix-store-remote" { });
@@ -47,7 +53,7 @@
                 (final: prev: {
                   haskell = prev.haskell // {
                     compiler = prev.haskell.compiler // {
-                      ${ghcName} = prev.haskell.compiler.${ghcName}.override {
+                      ${cas.ghc} = prev.haskell.compiler.${cas.ghc}.override {
                         enableRelocatedStaticLibs = true;
                         enableShared = false;
                         enableDwarf = false;
@@ -70,7 +76,6 @@
               drv.overrideAttrs(oa: {
                 postInstall = (oa.postInstall or "") + ''
                   ${pkgs.upx}/bin/upx -9 $out/bin/a-piece-of-flake
-                  ${pkgs.upx}/bin/upx -9 $out/bin/e
                 '';
               });
 
@@ -94,7 +99,7 @@
                   disallowedRequisites = [];
                 });
 
-            haskellPackagesO = pkgs.haskell.packages.${ghcName};
+            haskellPackagesO = pkgs.haskell.packages.${cas.ghc};
             inherit (pkgs.haskell.lib) dontCheck justStaticExecutables;
             haskellPackages = haskellPackagesO.override (old:
               {
@@ -109,7 +114,7 @@
         ## dynamic
         pkgs = nixpkgs.legacyPackages.${system};
         inherit (pkgs.haskell.lib) dontHaddock dontCheck;
-        haskellPackages = pkgs.haskell.packages.${ghcName}.extend(hnix-overlay);
+        haskellPackages = pkgs.haskell.packages.${cas.ghc}.extend(hnix-overlay);
       in {
         # haskellProjects.default = {
         #   packages = {
@@ -117,12 +122,11 @@
         #   };
         # };
         packages.${packageName} =
-          if (import c { inherit pkgs; }).static then
+          if cas.static then
             mkStatic packageName
           else
             dontHaddock (haskellPackages.callCabal2nix packageName self rec {});
         packages.default = self.packages.${system}.${packageName};
-        defaultPackage = self.packages.${system}.default;
 
         devShells.default = pkgs.mkShell {
           buildInputs = [ haskellPackages.haskell-language-server ] ++ (with pkgs; [
@@ -138,8 +142,7 @@
             echo $(dirname $(dirname $(which ghc)))/share/doc > .haddock-ref
           '';
         };
-        devShell = self.devShells.${system}.default;
 
-        nixosModules.default = import ./nixos/flake-lfi.nix (self.packages.${system}.${packageName});
+        nixosModules.default = import ./nixos/flake.nix (self.packages.${system}.${packageName});
       });
 }
