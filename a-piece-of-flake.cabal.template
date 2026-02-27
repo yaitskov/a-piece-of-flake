@@ -55,10 +55,14 @@ library
   exposed-modules:
     PieceOfFlake.CmdArgs
     PieceOfFlake.CmdRun
+    PieceOfFlake.Fetcher
     PieceOfFlake.Flake
+    PieceOfFlake.Index
     PieceOfFlake.Page
     PieceOfFlake.Prelude
+    PieceOfFlake.Req
     PieceOfFlake.Th
+    PieceOfFlake.Yesod
   other-modules:
     Paths_a_piece_of_flake
   autogen-modules:
@@ -67,14 +71,17 @@ library
     , add-dependent-file      < 1
     , aeson                   < 3
     , binary                  < 1
+    , either                  < 6
     , file-embed              < 1
     , full-text-search        < 1
     , hnix                    < 1
     , http-types              < 1
     , monad-logger            < 1
+    , network                 < 4
     , prettyprinter           < 2
     , ref-tf                  < 1
     , regex-tdfa              < 2
+    , req                     < 4
     , stm-containers          < 2
     , stm                     < 3
     , tar                     < 1
@@ -82,6 +89,7 @@ library
     , text-zipper             < 1
     , time                    < 2
     , trace-embrace           >= 1.3 && < 2
+    , wai                     < 4
     , warp                    < 4
     , warp-tls                < 4
     , wl-pprint-text          < 2

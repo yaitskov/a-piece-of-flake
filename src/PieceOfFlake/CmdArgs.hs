@@ -1,28 +1,36 @@
 module PieceOfFlake.CmdArgs where
 
+import Data.Either.Combinators ( mapLeft )
 import Options.Applicative
 import PieceOfFlake.Prelude
+import PieceOfFlake.Req
 
 data HttpPort
 data Cert
 data CertKey
 
+
 data CmdArgs
-  = RunService
+  = WebService
     { httpPortToListen :: Tagged HttpPort Int
     , certFile :: Maybe (Tagged Cert FilePath)
     , keyFile :: Maybe (Tagged CertKey FilePath)
     }
+  | FetcherJob
+    { webServiceUrl :: DynamicUrl
+    }
   | PieceOfFlakeVersion
-    deriving (Eq, Show)
+  deriving Show
 
 execWithArgs :: MonadIO m => (CmdArgs -> m a) -> m a
 execWithArgs a = a =<< liftIO (execParser $ info (cmdp <**> helper) phelp)
   where
-    serviceP = RunService <$> portOption <*> certO <*> certKeyO
+    serviceP = WebService <$> portOption <*> certO <*> certKeyO
+    fetcherP = FetcherJob <$> urlOption
     cmdp =
       hsubparser
-        (  command "run" (infoP serviceP "launch the service")
+        (  command "web" (infoP serviceP "launch web service")
+        <> command "fetcher" (infoP fetcherP "launch fetcher job")
         <> command "version" (infoP (pure PieceOfFlakeVersion) "print program version"))
 
     infoP p h = info p (progDesc h <> fullDesc)
@@ -30,13 +38,27 @@ execWithArgs a = a =<< liftIO (execParser $ info (cmdp <**> helper) phelp)
       progDesc
         "Nix Flake repository"
 
+defaultPort :: Int
+defaultPort = 3003
+
+urlOption :: Parser DynamicUrl
+urlOption =
+  option (eitherReader (mapLeft toString . parseUrl . toText))
+  ( long "url"
+    <> short 'u'
+    <> showDefault
+    <> value (UrlHttp (http "localhost") (port defaultPort))
+    <> help "web service url for fetching flake submition requests and uploading flake meta back"
+    <> metavar "URL"
+  )
+
 portOption :: Parser (Tagged HttpPort Int)
 portOption = Tagged <$>
   option auto
   ( long "port"
     <> short 'p'
     <> showDefault
-    <> value 3002
+    <> value defaultPort
     <> help "HTTP(S) port to listen"
     <> metavar "PORT"
   )

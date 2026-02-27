@@ -4,11 +4,10 @@
 {-# LANGUAGE MultilineStrings #-}
 module PieceOfFlake.Page where
 
-import Data.Binary.Builder (fromByteString)
-import Data.ByteString qualified as BS
 import PieceOfFlake.Th ( includeFile )
 import PieceOfFlake.Flake
-import PieceOfFlake.Prelude
+import PieceOfFlake.Prelude hiding (Map)
+import PieceOfFlake.Yesod
 import Yesod.Core
 
 -- import UnliftIO.Exception ( stringException, throwIO )
@@ -31,20 +30,6 @@ mkYesod "Ypp" [parseRoutes|
 instance Yesod Ypp where
   makeSessionBackend _ = pure Nothing
 
-data Contentable = forall x. (ToContent x, ToTypedContent x) => Contentable x
-instance ToContent Contentable where
-  toContent (Contentable x) = toContent x
-
-instance ToTypedContent Contentable where
-  toTypedContent (Contentable x) = toTypedContent x
-
-newtype FavIcon = FavIcon ByteString
-
-instance ToContent FavIcon where
-  toContent (FavIcon bs) =
-    ContentBuilder (fromByteString bs) (Just . fromIntegral $ BS.length bs)
-instance ToTypedContent FavIcon where
-  toTypedContent = TypedContent typeSvg . toContent
 
 
 getFaviconR :: Handler FavIcon
@@ -134,9 +119,11 @@ baseCss =
            |]
 
 
-postSubmitFlakeR :: HandlerFor Ypp ()
+postSubmitFlakeR :: HandlerFor Ypp Flake
 postSubmitFlakeR = do
-  requireCheckJsonBody >>= \fu@(FlakeUrl a) -> do
-    Ypp repo <- getYesod
-    trySubmitFlakeToRepo repo fu
-    putStrLn $ "Register flake " <> show ( $(tw "!/a") a)
+  requireCheckJsonBody >>= \fu -> do
+    ip <- IpAdr . clientAdrToDec4 <$> getClientAdr
+    Ypp { repo } <- getYesod
+    trySubmitFlakeToRepo ip repo fu >>= \case
+      Left e -> internalError e
+      Right f -> pure f

@@ -4,9 +4,10 @@ module PieceOfFlake.CmdRun where
 import Control.Monad.Logger ( liftLoc, ToLogStr(toLogStr) )
 import Data.Version (showVersion)
 import Language.Haskell.TH.Syntax (qLocation)
-import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.CmdArgs ( CmdArgs(..), CertKey, Cert )
+import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake (mkFlakeRepo)
+import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.Prelude
 import Network.Wai.Handler.WarpTLS ( runTLS, tlsSettings, TLSSettings )
 import Network.Wai.Handler.Warp
@@ -63,12 +64,14 @@ runPlain = runSettings
 
 runCmd :: CmdArgs -> IO ()
 runCmd = \case
-  rs@RunService {} -> do
+  rs@WebService {} -> do
     $(trIo "start/rs")
     y <- Ypp <$> mkFlakeRepo
     logger <- makeLogger y
     case liftA2 mkTlsSettings rs.certFile rs.keyFile of
       Nothing -> runPlain (mkSettings y rs logger) =<< toWaiApp y
       Just tlsSngs -> runTLS tlsSngs (mkSettings y rs logger) =<< toWaiApp y
+  FetcherJob serUrl ->
+    runFetcher serUrl
   PieceOfFlakeVersion ->
     putStrLn $ "Version " <> showVersion version
