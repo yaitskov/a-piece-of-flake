@@ -25,6 +25,7 @@ mkYesod "Ypp" [parseRoutes|
 /favicon.svg FaviconR GET
 /github.svg GitHubR GET
 /submit-flake SubmitFlakeR POST
+/fetch-new-flake-submitions FetchNewFlakeSubmitionsR POST
 |]
 
 instance Yesod Ypp where
@@ -119,7 +120,7 @@ baseCss =
            |]
 
 
-postSubmitFlakeR :: HandlerFor Ypp Flake
+postSubmitFlakeR :: Handler Flake
 postSubmitFlakeR = do
   requireCheckJsonBody >>= \fu -> do
     ip <- IpAdr . clientAdrToDec4 <$> getClientAdr
@@ -127,3 +128,10 @@ postSubmitFlakeR = do
     trySubmitFlakeToRepo ip repo fu >>= \case
       Left e -> internalError e
       Right f -> pure f
+
+postFetchNewFlakeSubmitionsR :: Handler (Maybe FlakeUrl)
+postFetchNewFlakeSubmitionsR = do
+  Ypp { repo } <- getYesod
+  requireCheckJsonBody >>= \case
+    Nothing -> popFlakeSubmition repo
+    Just fetchedFlake -> addFetchedFlake repo fetchedFlake

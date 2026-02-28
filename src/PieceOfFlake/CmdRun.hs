@@ -6,7 +6,7 @@ import Data.Version (showVersion)
 import Language.Haskell.TH.Syntax (qLocation)
 import PieceOfFlake.CmdArgs ( CmdArgs(..), CertKey, Cert )
 import PieceOfFlake.Fetcher ( runFetcher )
-import PieceOfFlake.Flake (mkFlakeRepo)
+import PieceOfFlake.Flake
 import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.Prelude
 import Network.Wai.Handler.WarpTLS ( runTLS, tlsSettings, TLSSettings )
@@ -29,7 +29,7 @@ import Yesod.Core
       Application,
       Yesod(makeLogger, messageLoggerSource) )
 import Yesod.Core.Types ( Logger )
-
+import UnliftIO.Concurrent
 
 mkSettings :: Ypp -> CmdArgs -> Logger -> Settings
 mkSettings yp ca logger =
@@ -64,13 +64,19 @@ runPlain = runSettings
 
 runCmd :: CmdArgs -> IO ()
 runCmd = \case
-  rs@WebService {} -> do
-    $(trIo "start/rs")
-    y <- Ypp <$> mkFlakeRepo
+  ws@WebService {} -> do
+    $(trIo "start/ws")
+    fr <- mkFlakeRepo
+    efsTid <- forkFinally (sendEmtpyFlakeSubmition fr 30_000_000)
+      (\case
+          Left e -> putStrLn $ "Empty Submition Thead ended: " <> show e
+          Right () -> putStrLn "Empty Submition Thead ended without errors")
+    putStrLn $ "Empty Submition thread is forked " <> show efsTid
+    let y = Ypp fr
     logger <- makeLogger y
-    case liftA2 mkTlsSettings rs.certFile rs.keyFile of
-      Nothing -> runPlain (mkSettings y rs logger) =<< toWaiApp y
-      Just tlsSngs -> runTLS tlsSngs (mkSettings y rs logger) =<< toWaiApp y
+    case liftA2 mkTlsSettings ws.certFile ws.keyFile of
+      Nothing -> runPlain (mkSettings y ws logger) =<< toWaiApp y
+      Just tlsSngs -> runTLS tlsSngs (mkSettings y ws logger) =<< toWaiApp y
   FetcherJob serUrl ->
     runFetcher serUrl
   PieceOfFlakeVersion ->

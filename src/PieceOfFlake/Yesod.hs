@@ -80,3 +80,11 @@ instance ToContent FavIcon where
     ContentBuilder (fromByteString bs) (Just . fromIntegral $ BS.length bs)
 instance ToTypedContent FavIcon where
   toTypedContent = TypedContent typeSvg . toContent
+
+-- instance ToContent a => ToContent (Maybe a) where
+--   toContent = \case
+--     Just a -> toContent a
+--     Nothing -> toContent ""
+
+-- instance ToTypedContent a => ToTypedContent (Maybe a) where
+--   toTypedContent = TypedContent typeJson . toContent

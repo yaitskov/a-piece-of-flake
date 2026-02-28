@@ -147,12 +147,16 @@ library
     , http-types              < 1
     , monad-logger            < 1
     , network                 < 4
+    , non-empty               < 1
     , prettyprinter           < 2
+    , process                 < 2
     , ref-tf                  < 1
     , regex-tdfa              < 2
     , req                     < 4
+    , retry                   < 1
     , stm-containers          < 2
     , stm                     < 3
+    , swizzle                 < 2
     , tar                     < 1
     , template-haskell        < 3
     , text-zipper             < 1
