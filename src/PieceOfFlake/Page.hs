@@ -151,6 +151,11 @@ baseCss =
              font-size: x-large;
              text-decoration: none;
              color: #e64d4d;
+
+             padding-left: 1.2lh;
+             background-size: auto 100%;
+             background-image: url(/favicon.svg);
+             background-repeat: no-repeat;
            }
            pre {
                font-size: small;
