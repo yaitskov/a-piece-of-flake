@@ -1,12 +1,14 @@
 /* a piece of flake
    github:yaitskov/add-dependent-file
  */
+const flush = new Audio("/flush.mp3");
 
 const submitFlake = (url) => {
   if (url == "" || url.length < 6) {
     console.log(`Flake url [${url}] is too short`);
     return false;
   }
+  flush.play();
   console.log(`Sumbitting flake ${url}`);
   var xhr = new XMLHttpRequest();
   xhr.open("POST", "submit-flake", true);

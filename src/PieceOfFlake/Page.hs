@@ -35,6 +35,7 @@ mkYesod "Ypp" [parseRoutes|
 / HomeR GET
 /favicon.svg FaviconR GET
 /github.svg GitHubR GET
+/flush.mp3 FlushSoundR GET
 /submit-flake SubmitFlakeR POST
 /fetch-new-flake-submitions FetchNewFlakeSubmitionsR POST
 /find-flakes FindFlakesR POST
@@ -48,6 +49,9 @@ getFaviconR = pure $ FavIcon $(includeFile "assets/favicon.svg")
 
 getGitHubR :: Handler FavIcon
 getGitHubR = pure $ FavIcon $(includeFile "assets/github.svg")
+
+getFlushSoundR :: Handler TypedContent
+getFlushSoundR = pure . TypedContent "audio/mpeg" $ toContent $(includeFile "assets/flush.mp3")
 
 getSiteMapR :: Handler TypedContent
 getSiteMapR = pure . TypedContent typeXml $ toContent $(includeFile "assets/sitemap.xml")

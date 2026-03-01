@@ -89,6 +89,7 @@ extra-source-files:
     assets/github.svg
     assets/app.js
     assets/robots.txt
+    assets/flush.mp3
     trace-embrace.yaml
 
 extra-doc-files:
