@@ -2,13 +2,24 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE MultilineStrings #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 module PieceOfFlake.Page where
 
+import Data.Aeson ( encode )
 import PieceOfFlake.Th ( includeFile )
-import PieceOfFlake.Flake
+import PieceOfFlake.Flake ( FlakeUrl, Flake, IpAdr(IpAdr) )
+import PieceOfFlake.Index ( findFlakes )
+import PieceOfFlake.Flake.Repo
+    ( FlakeRepo(flakeIndex),
+      trySubmitFlakeToRepo,
+      popFlakeSubmition,
+      addFetchedFlake )
 import PieceOfFlake.Prelude hiding (Map)
 import PieceOfFlake.Yesod
+    ( clientAdrToDec4, getClientAdr, internalError, FavIcon(..) )
 import Yesod.Core
+
 
 -- import UnliftIO.Exception ( stringException, throwIO )
 
@@ -26,12 +37,11 @@ mkYesod "Ypp" [parseRoutes|
 /github.svg GitHubR GET
 /submit-flake SubmitFlakeR POST
 /fetch-new-flake-submitions FetchNewFlakeSubmitionsR POST
+/find-flakes FindFlakesR POST
 |]
 
 instance Yesod Ypp where
   makeSessionBackend _ = pure Nothing
-
-
 
 getFaviconR :: Handler FavIcon
 getFaviconR = pure $ FavIcon $(includeFile "assets/favicon.svg")
@@ -62,13 +72,42 @@ getHomeR =
             <p>
               Nix Flake Repository
 
-            <form method=post onsubmit="return submitFlake(url.value)">
-              <fieldset>
-                <legend>New Flake Publication
-                <label>Flake URL
-                  <input type=text name=url autofocus/>
-                <div>
-                  <button>publish</button>
+            <div id=submition-form>
+              <div class=BadFlake>
+                <p class=date>
+                  Now
+                <p class=error>
+                  Error about flake fetching or indexing
+              <div class=FlakeIndexed>
+                <p class=date>
+                  Now
+                <p>
+                  <a href="#">Flake</a> has been indexed.
+              <div class=FlakeFetched>
+                <p class=date>
+                  Now
+                <p>
+                  <a href="#">Flake</a> has been fetched.
+              <div class=FlakeIsBeingFetched>
+                <p class=date>
+                  Now
+                <p>
+                  Flake fetching is in progress.
+                  Press submit to refresh.
+              <div class=SubmittedFlake>
+                <p class=date>
+                  Now
+                <p>
+                  <a href="#">Flake</a> has been submitted.
+                  Press submit to refresh.
+              <div class=submition-form>
+                <form method=post onsubmit="return submitFlake(url.value)">
+                  <fieldset>
+                    <legend>Nix Flake Publication
+                    <label>Flake URL
+                      <input type=text id=flake-url name=url autofocus value="github:yaitskov/add-dependent-file"/>
+                    <div>
+                      <button>publish</button>
             <center>
               <p>
                 <a href="https://github.com/yaitskov/a-piece-of-flake">
@@ -117,6 +156,21 @@ baseCss =
                text-indent: -2em;
                padding-left: 2em;
            }
+
+           #submition-form .SubmittedFlake,
+           #submition-form .FlakeIsBeingFetched,
+           #submition-form .BadFlake,
+           #submition-form .FlakeFetched,
+           #submition-form .FlakeIndexed {
+             display: none;
+           }
+           #submition-form.SubmittedFlake .SubmittedFlake,
+           #submition-form.FlakeIsBeingFetched .FlakeIsBeingFetched,
+           #submition-form.BadFlake .BadFlake,
+           #submition-form.FlakeFetched .FlakeFetched,
+           #submition-form.FlakeIndexed .FlakeIndexed {
+             display: inherit;
+           }
            |]
 
 
@@ -133,5 +187,17 @@ postFetchNewFlakeSubmitionsR :: Handler (Maybe FlakeUrl)
 postFetchNewFlakeSubmitionsR = do
   Ypp { repo } <- getYesod
   requireCheckJsonBody >>= \case
-    Nothing -> popFlakeSubmition repo
+    Nothing -> do
+      putStrLn "Just Fetch nex FlakeUrl"
+      r <- popFlakeSubmition repo
+      putBSLn $ toStrict $ encode r <> " :: Maybe Flake  <-> "  <> show r
+      pure r
     Just fetchedFlake -> addFetchedFlake repo fetchedFlake
+
+
+postFindFlakesR :: Handler [ FlakeUrl ]
+postFindFlakesR = do
+  Ypp { repo } <- getYesod
+  requireCheckJsonBody >>= go repo
+  where
+    go repo = findFlakes repo.flakeIndex -- fsr .searchPattern

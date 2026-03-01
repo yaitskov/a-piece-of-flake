@@ -8,13 +8,14 @@ import PieceOfFlake.Req
 data HttpPort
 data Cert
 data CertKey
-
+data AcidFlakesPath
 
 data CmdArgs
   = WebService
     { httpPortToListen :: Tagged HttpPort Int
     , certFile :: Maybe (Tagged Cert FilePath)
     , keyFile :: Maybe (Tagged CertKey FilePath)
+    , acidFlakes :: Tagged AcidFlakesPath FilePath
     }
   | FetcherJob
     { webServiceUrl :: DynamicUrl
@@ -25,7 +26,7 @@ data CmdArgs
 execWithArgs :: MonadIO m => (CmdArgs -> m a) -> m a
 execWithArgs a = a =<< liftIO (execParser $ info (cmdp <**> helper) phelp)
   where
-    serviceP = WebService <$> portOption <*> certO <*> certKeyO
+    serviceP = WebService <$> portOption <*> certO <*> certKeyO <*> acidOption
     fetcherP = FetcherJob <$> urlOption
     cmdp =
       hsubparser
@@ -40,6 +41,17 @@ execWithArgs a = a =<< liftIO (execParser $ info (cmdp <**> helper) phelp)
 
 defaultPort :: Int
 defaultPort = 3003
+
+acidOption :: Parser (Tagged AcidFlakesPath FilePath)
+acidOption = Tagged <$>
+  option str
+  ( long "acid"
+    <> short 'a'
+    <> showDefault
+    <> value  "acid-flakes/"
+    <> help "path do ACID flake store"
+    <> metavar "ACID"
+  )
 
 urlOption :: Parser DynamicUrl
 urlOption =

@@ -122,14 +122,17 @@ library
   import: base
   hs-source-dirs: src
   exposed-modules:
+    PieceOfFlake.Acid
     PieceOfFlake.CmdArgs
     PieceOfFlake.CmdRun
     PieceOfFlake.Fetcher
     PieceOfFlake.Flake
+    PieceOfFlake.Flake.Repo
     PieceOfFlake.Index
     PieceOfFlake.Page
     PieceOfFlake.Prelude
     PieceOfFlake.Req
+    PieceOfFlake.Stm
     PieceOfFlake.Th
     PieceOfFlake.Yesod
   other-modules:
@@ -137,10 +140,13 @@ library
   autogen-modules:
     Paths_a_piece_of_flake
   build-depends:
+    , acid-state              < 1
     , add-dependent-file      < 1
     , aeson                   < 3
+    , aeson-pretty            < 1
     , binary                  < 1
     , either                  < 6
+    , exceptions              < 1
     , file-embed              < 1
     , full-text-search        < 1
     , hnix                    < 1
@@ -154,6 +160,7 @@ library
     , regex-tdfa              < 2
     , req                     < 4
     , retry                   < 1
+    , safecopy                < 1
     , stm-containers          < 2
     , stm                     < 3
     , swizzle                 < 2

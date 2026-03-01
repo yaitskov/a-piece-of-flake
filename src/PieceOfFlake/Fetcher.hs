@@ -2,27 +2,40 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 module PieceOfFlake.Fetcher where
 
+
+import Control.Monad.Catch ( Handler(Handler) )
 import Data.Aeson
+    ( FromJSON(parseJSON),
+      defaultOptions,
+      Options(fieldLabelModifier),
+      eitherDecodeStrict,
+      genericParseJSON )
 import Data.Char ( toLower )
 import Data.Map.Strict qualified as M
-
+import Data.Text qualified as T
 import PieceOfFlake.Req
-    ( defaultHttpConfig,
+    ( MonadHttp,
+      DynamicUrl,
+      POST(POST),
+      ReqBodyJson(ReqBodyJson),
+      defaultHttpConfig,
       jsonResponse,
       responseBody,
       runReq,
-      MonadHttp,
-      POST(POST),
-      ReqBodyJson(ReqBodyJson),
-      DynamicUrl,
-      dynReq )
+      dynReq,
+      HttpException(VanillaHttpException) )
 import PieceOfFlake.Flake
-
+    ( PackageInfo(..),
+      PackageName(..),
+      FlakeUrl(..),
+      MetaFlake(..),
+      Architecture(..) )
 import PieceOfFlake.Prelude
-import System.Process
-import UnliftIO
--- import UnliftIO.Exception
-import Data.Text qualified as T
+import System.Process ( readProcess )
+import UnliftIO ( MonadUnliftIO, catchAny, stringException, throwIO )
+import UnliftIO.Retry
+
+
 
 readJson :: (FromJSON a, MonadIO m) => Text -> [Text] -> m a
 readJson prg prgArgs = do
@@ -72,6 +85,12 @@ instance FromJSON RawFlakeInfo
 nixFlakeInfo :: MonadIO m => FlakeUrl -> m RawFlakeInfo
 nixFlakeInfo (FlakeUrl fu) =
   readJson "nix" ["flake", "metadata", "--json", fu]
+
+
+nixCurrentArch :: MonadIO m => m Architecture
+nixCurrentArch =
+  Architecture . toText <$>
+  liftIO (readProcess "nix" (toString <$> words "eval --impure --raw --expr builtins.currentSystem") "")
 
 newtype RawFlakeOutputs
   = RawFlakeOutputs
@@ -126,10 +145,11 @@ rawPackageToPackageInfo rp =
   , broken = rp.broken
   }
 
-metaFlakeFromUrl :: (MonadUnliftIO m) => FlakeUrl -> m MetaFlake
+metaFlakeFromUrl :: (MonadReader Architecture m, MonadUnliftIO m) => FlakeUrl -> m MetaFlake
 metaFlakeFromUrl fu = do
   rfi <- nixFlakeInfo fu
-  archPkgs <- fmap M.keys . (\x -> x.packages) <$> nixFlakeShow fu
+  curArch <- ask
+  archPkgs <- fmap M.keys . M.filterWithKey (\a _ps -> a == curArch) . (\x -> x.packages) <$> nixFlakeShow fu
   metaPackages <- M.fromList <$> mapM mapArchPkgs (M.toList archPkgs)
   pure MetaFlake
     { description = rfi.description
@@ -141,9 +161,10 @@ metaFlakeFromUrl fu = do
     getPackageInfo arch pkgName =
        rawPackageToPackageInfo <$> nixEvalPkgMeta fu arch pkgName
     mapArchPkgs (arch, pkgNames) =
-          (arch, ) . M.fromList <$> mapM (\pkgName -> (pkgName,) <$> getPackageInfo arch pkgName) pkgNames
+          (arch, ) . M.fromList <$> mapM (\pkgName -> (pkgName,) <$> getPackageInfo arch pkgName)
+            (filter (/= PackageName "default") pkgNames)
 
-uploadFlakeAndFetch :: (MonadHttp m, MonadUnliftIO m) =>
+uploadFlakeAndFetch :: (MonadReader Architecture m, MonadHttp m, MonadUnliftIO m) =>
   DynamicUrl ->
   Maybe (FlakeUrl, Either Text MetaFlake)
   -> m ()
@@ -158,7 +179,27 @@ uploadFlakeAndFetch surl f = do
     go fu =
       uploadFlakeAndFetch surl . Just . (fu,) . Right =<< metaFlakeFromUrl fu
 
-runFetcher :: MonadIO m => DynamicUrl -> m ()
-runFetcher serviceUrl =
-  runReq defaultHttpConfig $ do
-    uploadFlakeAndFetch serviceUrl Nothing
+-- xxx = MetaFlake
+--   { description = Just "VPN bypass"
+--   , packages = fromList
+--     [("aarch64-darwin",fromList [])
+--     ,("aarch64-linux",fromList [])
+--     ,("x86_64-darwin",fromList [])
+--     ,("x86_64-linux",fromList [])]
+--   , rev = "29aaa5f650c4d08932646399aaad0904322f5536"
+--   , flakeDeps = []
+--   }
+
+runFetcher :: MonadUnliftIO m => DynamicUrl -> m ()
+runFetcher serviceUrl = do
+  ca <- nixCurrentArch
+  recovering
+    (fibonacciBackoff 100_000 <> limitRetries 1111)
+    [ \_rs -> Handler $
+        \case
+          e@VanillaHttpException {} -> do
+            putStrLn $ "Retry after " <> show e
+            pure True
+          _ -> pure False
+    ]
+    (\_ -> runReq defaultHttpConfig $ runReaderT (uploadFlakeAndFetch serviceUrl Nothing) ca)
