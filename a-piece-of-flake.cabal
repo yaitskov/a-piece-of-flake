@@ -91,6 +91,7 @@ extra-source-files:
     assets/robots.txt
     assets/flush.mp3
     assets/snow.mp3
+    assets/avalanche.mp3
     trace-embrace.yaml
 
 extra-doc-files:

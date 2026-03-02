@@ -38,6 +38,7 @@ mkYesod "Ypp" [parseRoutes|
 /github.svg GitHubR GET
 /flush.mp3 FlushSoundR GET
 /snow.mp3 SnowSoundR GET
+/avalanche.mp3 AvalancheSoundR GET
 /submit-flake SubmitFlakeR POST
 /fetch-new-flake-submitions FetchNewFlakeSubmitionsR POST
 /find-flakes FindFlakesR POST
@@ -56,11 +57,13 @@ sendStaticBs mime c = do
   setCacheHeaderForStatic
   pure . TypedContent mime $ toContent c
 
-getAppJsR, getFaviconR, getRobotsR, getGitHubR, getFlushSoundR, getSnowSoundR, getSiteMapR :: Handler TypedContent
+getAppJsR, getFaviconR, getRobotsR, getGitHubR, getFlushSoundR :: Handler TypedContent
+getSnowSoundR, getSiteMapR, getAvalancheSoundR :: Handler TypedContent
 getFaviconR = sendStaticBs typeSvg $(includeFile "assets/favicon.svg")
 getGitHubR = sendStaticBs typeSvg $(includeFile "assets/github.svg")
 getFlushSoundR = sendStaticBs mp3Mime $(includeFile "assets/flush.mp3")
 getSnowSoundR = sendStaticBs mp3Mime $(includeFile "assets/snow.mp3")
+getAvalancheSoundR = sendStaticBs mp3Mime $(includeFile "assets/avalanche.mp3")
 getSiteMapR = sendStaticBs typeXml $(includeFile "assets/sitemap.xml")
 getRobotsR = sendStaticBs typePlain $(includeFile "assets/robots.txt")
 getAppJsR = sendStaticBs typeJavascript $(includeFile "assets/app.js")
