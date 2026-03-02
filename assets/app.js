@@ -2,7 +2,7 @@
    github:yaitskov/add-dependent-file
  */
 const flush = Math.random() >= 0.5 ? new Audio("/snow.mp3")
-      : (Math.random() >= 0.5  ?  new Audio("/avalancheg.mp3") : new Audio("/flush.mp3"));
+      : (Math.random() >= 0.5  ?  new Audio("/avalanche.mp3") : new Audio("/flush.mp3"));
 
 const submitFlake = (url) => {
   if (url == "" || url.length < 6) {

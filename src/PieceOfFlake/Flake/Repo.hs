@@ -5,9 +5,15 @@ module PieceOfFlake.Flake.Repo where
 import Data.Acid ( AcidState )
 import Control.Concurrent (threadDelay)
 import Control.Monad.Logger ( logError, logInfo, WriterLoggingT )
-import PieceOfFlake.Acid
+import PieceOfFlake.Acid ( AcidFlakes )
 import PieceOfFlake.Flake
-import PieceOfFlake.Index ( FlakeIndex, emptyFlakeIndex )
+    ( Flake(FlakeFetched, SubmittedFlake, flakeUrl,
+            FlakeIsBeingFetched, BadFlake),
+      FlakeUrl,
+      IpAdr,
+      MetaFlake,
+      FetcherId(..) )
+import PieceOfFlake.Index ( FlakeIndex )
 import PieceOfFlake.Prelude hiding (Map)
 import PieceOfFlake.Stm ( newTQueueIO, readTQueue, writeTQueue, TQueue, atomicalog )
 import StmContainers.Map ( insert, lookup, newIO, Map )
@@ -25,11 +31,8 @@ data FlakeRepo
   , acidQueue :: TQueue (FlakeUrl, Flake)
   }
 
-mkFlakeRepo :: MonadIO m => AcidState AcidFlakes -> m FlakeRepo
-mkFlakeRepo acidFlakeStorage = do
-  flakesMap <- liftIO newIO
-  flakeEntries <- reverse <$> loadFromDb acidFlakeStorage
-  atomically $ mapM_ (\(k, v) -> insert v k flakesMap) flakeEntries
+mkFlakeRepo :: MonadIO m => TVar FlakeIndex -> Map FlakeUrl Flake -> AcidState AcidFlakes -> m FlakeRepo
+mkFlakeRepo fi flakesMap acidFlakeStorage = do
   liftIO $
     FlakeRepo flakesMap acidFlakeStorage <$>
       newIO <*>
@@ -37,7 +40,7 @@ mkFlakeRepo acidFlakeStorage = do
       newTQueueIO <*>
       newTVarIO 0 <*>
       newTVarIO 0 <*>
-      newTVarIO emptyFlakeIndex <*>
+      pure fi <*>
       newTQueueIO
 
 trySubmitFlakeToRepo :: MonadIO m => IpAdr -> FlakeRepo -> FlakeUrl -> m (Either Text Flake)

@@ -2,13 +2,26 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 module PieceOfFlake.Index where
 
-import Control.Monad.Logger ( logError, logInfo )
+import Control.Monad.Logger ( logError, logInfo, MonadLogger )
 import Data.Aeson ( FromJSON )
 import Data.Map.Strict qualified as M
 import Data.SearchEngine
+    ( SearchEngine,
+      Term,
+      query,
+      initSearchEngine,
+      insertDoc,
+      FeatureFunction(LogarithmicFunction),
+      SearchConfig(documentFeatureValue, SearchConfig, documentKey,
+                   extractDocumentTerms, transformQueryTerm),
+      SearchRankParameters(paramAutosuggestPostfilterLimit,
+                           SearchRankParameters, paramK1, paramB, paramFieldWeights,
+                           paramFeatureWeights, paramFeatureFunctions,
+                           paramResultsetSoftLimit, paramResultsetHardLimit,
+                           paramAutosuggestPrefilterLimit) )
 import PieceOfFlake.Flake
-    ( FlakeUrl,
-      Flake(meta, FlakeFetched, FlakeIndexed),
+    ( Flake(flakeUrl, FlakeIndexed, FlakeFetched, meta),
+      FlakeUrl,
       MetaFlake(packages, description),
       PackageInfo(broken, description, license, name, unfree) )
 import PieceOfFlake.Prelude hiding (pi, Map)
@@ -16,9 +29,6 @@ import PieceOfFlake.Stm ( readTQueue, TQueue, atomicalog )
 import StmContainers.Map ( Map, insert, lookup )
 
 type FlakeIndex = SearchEngine (FlakeUrl, MetaFlake) FlakeUrl () ()
-
--- textOfMetaFlake :: FlakeUrl -> MetaFlake -> Text
--- textOfMetaFlake (FlakeUrl fu) mf =
 
 packageInfoToTerms :: PackageInfo -> [Term]
 packageInfoToTerms pi =
@@ -56,26 +66,44 @@ emptyFlakeIndex =
     }
 
 consumeIndexQueue :: MonadIO m => Map FlakeUrl Flake -> TQueue FlakeUrl -> TVar Int -> TVar FlakeIndex -> m ()
-consumeIndexQueue fs q qlen fi = liftIO $(trIo "started/") >> go
+consumeIndexQueue fs q qlen fi = do
+  now <- liftIO getCurrentTime
+  atomicalog $ do
+    $(logInfo) "Wait for flakes to index for full text search"
+    fu <- lift $ readTQueue q
+    lift $ modifyTVar' qlen (\x -> x - 1)
+    ql <- lift $ readTVar qlen
+    $(logInfo) $ "Start index flake " <> show fu <> "; index queue " <> show ql
+    lift (lookup fu fs) >>= \case
+      Nothing -> $(logError) $ "Flake " <> show fu <> " is missing"
+      Just f -> indexFlake now fi fs f
+
+indexFlake :: (MonadLogger (t STM), MonadTrans t) => UTCTime -> TVar FlakeIndex -> Map FlakeUrl Flake -> Flake -> t STM ()
+indexFlake now fi fs f =
+  case f of
+   ff@FlakeFetched { flakeUrl } ->
+     let fu = flakeUrl
+         ixf  = FlakeIndexed fu now ff.meta
+     in
+       do
+         lift $ do
+           insert ixf fu fs
+           modifyTVar' fi (insertDoc (fu, ff.meta))
+         $(logInfo) $ "Finished index flake " <> show fu
+   _nff -> $(logError) $ "Flake " <> show f.flakeUrl <> " is not in the fetched state"
+
+loadIndexFromScratch ::
+  (MonadIO m) => TVar FlakeIndex -> Map FlakeUrl Flake -> [(FlakeUrl, Flake)] -> m ()
+loadIndexFromScratch fi fsm fs = do
+  now <- liftIO getCurrentTime
+  atomicalog $ do
+    $(logInfo) "Started init full text search index population"
+    mapM_ (go now) fs
+    $(logInfo) "Ened init full text search index population"
   where
-    go = do
-      now <- liftIO getCurrentTime
-      atomicalog $ do
-        $(logInfo) "Wait for flakes to index for full text search"
-        fu <- lift $ readTQueue q
-        lift $ modifyTVar' qlen (\x -> x - 1)
-        ql <- lift $ readTVar qlen
-        $(logInfo) $ "Start index flake " <> show fu <> "; index queue " <> show ql
-        lift (lookup fu fs) >>= \case
-          Nothing -> $(logError) $ "Flake " <> show fu <> " is missing"
-          Just ff@FlakeFetched {} -> do
-            lift $ do
-              let f = FlakeIndexed fu now ff.meta
-              insert f fu fs
-              modifyTVar' fi (insertDoc (fu, ff.meta))
-            $(logInfo) $ "Finished index flake " <> show fu
-          Just _nff -> $(logError) $ "Flake " <> show fu <> " is not in the fetched state"
-      go
+    go now = \case
+      (_, ff@FlakeFetched {}) -> indexFlake now fi fsm ff
+      (fu, nff) -> lift $ insert nff fu fsm
 
 data FlakeSearchReq
   = FlakeSearchReq

@@ -4,11 +4,17 @@ module PieceOfFlake.CmdRun where
 import Control.Monad.Logger ( liftLoc, ToLogStr(toLogStr) )
 import Data.Version (showVersion)
 import Language.Haskell.TH.Syntax (qLocation)
-import PieceOfFlake.Acid ( openFlakeDb, runPersistQueue )
+import PieceOfFlake.Acid
+    ( loadFromDb, openFlakeDb, runPersistQueue )
 import PieceOfFlake.CmdArgs ( CmdArgs(..), CertKey, Cert )
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
-import PieceOfFlake.Index ( consumeIndexQueue )
+    ( FlakeRepo(indexerQueueLen, flakeIndex, flakes, acidFlakes,
+                acidQueue, indexerQueue),
+      mkFlakeRepo,
+      sendEmtpyFlakeSubmition )
+import PieceOfFlake.Index
+    ( consumeIndexQueue, emptyFlakeIndex, loadIndexFromScratch )
 import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.Prelude
 import Network.Wai.Handler.WarpTLS ( runTLS, tlsSettings, TLSSettings )
@@ -30,9 +36,10 @@ import Yesod.Core
       LogLevel(LevelError),
       Application,
       Yesod(makeLogger, messageLoggerSource) )
+import StmContainers.Map ( newIO )
+import UnliftIO.Concurrent ( forkFinally )
+import UnliftIO.Retry ( fibonacciBackoff, recoverAll )
 import Yesod.Core.Types ( Logger )
-import UnliftIO.Concurrent
-import UnliftIO.Retry
 
 mkSettings :: Ypp -> CmdArgs -> Logger -> Settings
 mkSettings yp ca logger =
@@ -69,7 +76,13 @@ runCmd :: CmdArgs -> IO ()
 runCmd = \case
   ws@WebService {} -> do
     $(trIo "start/ws")
-    fr <- mkFlakeRepo =<< openFlakeDb ws.acidFlakes
+    flakesMap <- liftIO newIO
+    fi <- newTVarIO emptyFlakeIndex
+    acidFlakeStorage <- openFlakeDb ws.acidFlakes
+    loadIndexFromScratch fi flakesMap . reverse =<< loadFromDb acidFlakeStorage
+
+    fr <- mkFlakeRepo fi flakesMap acidFlakeStorage
+
     persisFlakeTid <- forkFinally
       (forever $ do
         recoverAll
@@ -79,7 +92,8 @@ runCmd = \case
           Left e -> putStrLn $ "Flake Persistence thread ended: " <> show e
           Right () -> putStrLn "Flake Persistence thread ended without errors")
     putStrLn $ "Flake persistence thread is forked " <> show persisFlakeTid
-    idxFlakeTid <- forkFinally (consumeIndexQueue fr.flakes fr.indexerQueue fr.indexerQueueLen fr.flakeIndex)
+    idxFlakeTid <- forkFinally
+      (forever $ consumeIndexQueue fr.flakes fr.indexerQueue fr.indexerQueueLen fr.flakeIndex)
       (\case
           Left e -> putStrLn $ "Flake text search indexer thread ended: " <> show e
           Right () -> putStrLn "Flake text search indexer thread without errors")
