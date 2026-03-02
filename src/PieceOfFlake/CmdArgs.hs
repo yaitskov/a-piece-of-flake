@@ -9,6 +9,7 @@ data HttpPort
 data Cert
 data CertKey
 data AcidFlakesPath
+data StaticCacheSeconds
 
 data CmdArgs
   = WebService
@@ -16,6 +17,7 @@ data CmdArgs
     , certFile :: Maybe (Tagged Cert FilePath)
     , keyFile :: Maybe (Tagged CertKey FilePath)
     , acidFlakes :: Tagged AcidFlakesPath FilePath
+    , staticCache :: Tagged StaticCacheSeconds Word32
     }
   | FetcherJob
     { webServiceUrl :: DynamicUrl
@@ -26,7 +28,7 @@ data CmdArgs
 execWithArgs :: MonadIO m => (CmdArgs -> m a) -> m a
 execWithArgs a = a =<< liftIO (execParser $ info (cmdp <**> helper) phelp)
   where
-    serviceP = WebService <$> portOption <*> certO <*> certKeyO <*> acidOption
+    serviceP = WebService <$> portOption <*> certO <*> certKeyO <*> acidOption <*> cacheSecondsO
     fetcherP = FetcherJob <$> urlOption
     cmdp =
       hsubparser
@@ -41,6 +43,17 @@ execWithArgs a = a =<< liftIO (execParser $ info (cmdp <**> helper) phelp)
 
 defaultPort :: Int
 defaultPort = 3003
+
+cacheSecondsO :: Parser (Tagged StaticCacheSeconds Word32)
+cacheSecondsO = Tagged <$>
+  option auto
+  ( long "static-cache"
+    <> short 'c'
+    <> showDefault
+    <> value 1
+    <> help "cache duration for static content (used in HTTP header)"
+    <> metavar "STATIC_CACHE"
+  )
 
 acidOption :: Parser (Tagged AcidFlakesPath FilePath)
 acidOption = Tagged <$>

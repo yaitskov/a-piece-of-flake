@@ -4,7 +4,7 @@ module PieceOfFlake.CmdRun where
 import Control.Monad.Logger ( liftLoc, ToLogStr(toLogStr) )
 import Data.Version (showVersion)
 import Language.Haskell.TH.Syntax (qLocation)
-import PieceOfFlake.Acid
+import PieceOfFlake.Acid ( openFlakeDb, runPersistQueue )
 import PieceOfFlake.CmdArgs ( CmdArgs(..), CertKey, Cert )
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
@@ -89,7 +89,7 @@ runCmd = \case
           Left e -> putStrLn $ "Empty Submition Thead ended: " <> show e
           Right () -> putStrLn "Empty Submition Thead ended without errors")
     putStrLn $ "Empty Submition thread is forked " <> show efsTid
-    let y = Ypp fr
+    let y = Ypp fr ws.staticCache
     logger <- makeLogger y
     case liftA2 mkTlsSettings ws.certFile ws.keyFile of
       Nothing -> runPlain (mkSettings y ws logger) =<< toWaiApp y

@@ -88,3 +88,6 @@ instance ToTypedContent FavIcon where
 
 -- instance ToTypedContent a => ToTypedContent (Maybe a) where
 --   toTypedContent = TypedContent typeJson . toContent
+
+mp3Mime :: ByteString
+mp3Mime = "audio/mpeg"

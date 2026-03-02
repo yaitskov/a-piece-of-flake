@@ -17,15 +17,16 @@ import PieceOfFlake.Flake.Repo
       addFetchedFlake )
 import PieceOfFlake.Prelude hiding (Map)
 import PieceOfFlake.Yesod
-    ( clientAdrToDec4, getClientAdr, internalError, FavIcon(..) )
+    ( clientAdrToDec4, getClientAdr, internalError, mp3Mime )
 import Yesod.Core
-
+import PieceOfFlake.CmdArgs (StaticCacheSeconds)
 
 -- import UnliftIO.Exception ( stringException, throwIO )
 
-newtype Ypp
+data Ypp
   = Ypp
     { repo :: FlakeRepo
+    , staticCache :: Tagged StaticCacheSeconds Word32
     }
 
 mkYesod "Ypp" [parseRoutes|
@@ -36,6 +37,7 @@ mkYesod "Ypp" [parseRoutes|
 /favicon.svg FaviconR GET
 /github.svg GitHubR GET
 /flush.mp3 FlushSoundR GET
+/snow.mp3 SnowSoundR GET
 /submit-flake SubmitFlakeR POST
 /fetch-new-flake-submitions FetchNewFlakeSubmitionsR POST
 /find-flakes FindFlakesR POST
@@ -44,23 +46,24 @@ mkYesod "Ypp" [parseRoutes|
 instance Yesod Ypp where
   makeSessionBackend _ = pure Nothing
 
-getFaviconR :: Handler FavIcon
-getFaviconR = pure $ FavIcon $(includeFile "assets/favicon.svg")
+setCacheHeaderForStatic :: Handler ()
+setCacheHeaderForStatic = do
+  Ypp { staticCache } <- getYesod
+  cacheSeconds . fromIntegral $ untag staticCache
 
-getGitHubR :: Handler FavIcon
-getGitHubR = pure $ FavIcon $(includeFile "assets/github.svg")
+sendStaticBs :: ToContent a => ByteString -> a -> Handler TypedContent
+sendStaticBs mime c = do
+  setCacheHeaderForStatic
+  pure . TypedContent mime $ toContent c
 
-getFlushSoundR :: Handler TypedContent
-getFlushSoundR = pure . TypedContent "audio/mpeg" $ toContent $(includeFile "assets/flush.mp3")
-
-getSiteMapR :: Handler TypedContent
-getSiteMapR = pure . TypedContent typeXml $ toContent $(includeFile "assets/sitemap.xml")
-
-getRobotsR :: Handler TypedContent
-getRobotsR = pure . TypedContent typePlain $ toContent $(includeFile "assets/robots.txt")
-
-getAppJsR :: Handler TypedContent
-getAppJsR = pure . TypedContent typeJavascript $ toContent $(includeFile "/home/dan/pro/haskell/my/a-piece-of-flake/a-piece-of-flake/assets/app.js")
+getAppJsR, getFaviconR, getRobotsR, getGitHubR, getFlushSoundR, getSnowSoundR, getSiteMapR :: Handler TypedContent
+getFaviconR = sendStaticBs typeSvg $(includeFile "assets/favicon.svg")
+getGitHubR = sendStaticBs typeSvg $(includeFile "assets/github.svg")
+getFlushSoundR = sendStaticBs mp3Mime $(includeFile "assets/flush.mp3")
+getSnowSoundR = sendStaticBs mp3Mime $(includeFile "assets/snow.mp3")
+getSiteMapR = sendStaticBs typeXml $(includeFile "assets/sitemap.xml")
+getRobotsR = sendStaticBs typePlain $(includeFile "assets/robots.txt")
+getAppJsR = sendStaticBs typeJavascript $(includeFile "assets/app.js")
 
 getHomeR :: Handler Html
 getHomeR =
