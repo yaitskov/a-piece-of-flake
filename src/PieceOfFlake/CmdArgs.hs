@@ -4,12 +4,14 @@ import Data.Either.Combinators ( mapLeft )
 import Options.Applicative
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req
+    ( DynamicUrl(UrlHttp), http, port, parseUrl )
 
 data HttpPort
 data Cert
 data CertKey
 data AcidFlakesPath
 data StaticCacheSeconds
+data RawNixCacheOutput
 
 data CmdArgs
   = WebService
@@ -21,6 +23,7 @@ data CmdArgs
     }
   | FetcherJob
     { webServiceUrl :: DynamicUrl
+    , rawNixCache :: Tagged RawNixCacheOutput (Maybe FilePath)
     }
   | PieceOfFlakeVersion
   deriving Show
@@ -29,7 +32,7 @@ execWithArgs :: MonadIO m => (CmdArgs -> m a) -> m a
 execWithArgs a = a =<< liftIO (execParser $ info (cmdp <**> helper) phelp)
   where
     serviceP = WebService <$> portOption <*> certO <*> certKeyO <*> acidOption <*> cacheSecondsO
-    fetcherP = FetcherJob <$> urlOption
+    fetcherP = FetcherJob <$> urlOption <*> rawNixCacheO
     cmdp =
       hsubparser
         (  command "web" (infoP serviceP "launch web service")
@@ -54,6 +57,23 @@ cacheSecondsO = Tagged <$>
     <> help "cache duration for static content (used in HTTP header)"
     <> metavar "STATIC_CACHE"
   )
+
+rawNixCacheO :: Parser (Tagged RawNixCacheOutput (Maybe FilePath))
+rawNixCacheO = Tagged <$>
+  option (eitherReader parse )
+  ( long "raw-nix-cache-output"
+    <> short 'c'
+    <> showDefault
+    <> value (pure "fetcher-raw-nix-cache")
+    <> help "path to fetcher cache of nix raw output"
+    <> metavar "RAW_NIX_CACHE"
+  )
+  where
+    parse = \case
+      "" -> pure Nothing
+      "null" -> pure Nothing
+      "-" -> pure Nothing
+      o -> pure $ Just o
 
 acidOption :: Parser (Tagged AcidFlakesPath FilePath)
 acidOption = Tagged <$>

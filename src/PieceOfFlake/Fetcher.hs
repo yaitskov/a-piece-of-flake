@@ -4,6 +4,7 @@ module PieceOfFlake.Fetcher where
 
 
 import Control.Monad.Catch ( Handler(Handler) )
+import Crypto.Hash.SHA1 (hashlazy)
 import Data.Aeson
     ( FromJSON(parseJSON),
       defaultOptions,
@@ -11,8 +12,12 @@ import Data.Aeson
       eitherDecodeStrict,
       genericParseJSON )
 import Data.Char ( toLower )
+import Data.ByteArray.Encoding (Base(Base16), convertToBase)
+import Data.ByteString.Char8 qualified as BS8
+import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as M
 import Data.Text qualified as T
+import PieceOfFlake.CmdArgs ( RawNixCacheOutput )
 import PieceOfFlake.Req
     ( MonadHttp,
       DynamicUrl,
@@ -34,11 +39,15 @@ import PieceOfFlake.Prelude
 import System.Process ( readProcess )
 import UnliftIO ( MonadUnliftIO, catchAny, stringException, throwIO )
 import UnliftIO.Retry
+    ( fibonacciBackoff, recovering, limitRetries )
+import UnliftIO.Directory
+import System.FilePath ( (</>) )
 
+showDigest :: ByteString -> String
+showDigest = BS8.unpack . convertToBase Base16
 
-
-readJson :: (FromJSON a, MonadIO m) => Text -> [Text] -> m a
-readJson prg prgArgs = do
+readJsonDirect :: (FromJSON a, MonadIO m) => Text -> [Text] -> m a
+readJsonDirect prg prgArgs = do
   prgOut <- liftIO (readProcess (toString prg) (toString <$> prgArgs) "")
   case eitherDecodeStrict $ encodeUtf8 prgOut of
     Right x -> pure x
@@ -46,6 +55,58 @@ readJson prg prgArgs = do
       throwIO . stringException $
       "Failed to parse output as JSON:\n" <> prgOut <> "\nFrom: " <>
       toString (T.intercalate " " prgArgs)  <> "\nError: " <> e
+
+newtype ReadJsonCached = ReadJsonCached FilePath
+
+{-  hash path cut 2 chars join with </> mkdir -p
+    by that path create files out.json and cmd.sh
+-}
+
+readJsonCached :: (FromJSON a, MonadIO m) => FilePath -> Text -> [Text] -> m a
+readJsonCached cacheDir prg prgArgs = do
+  let cmd = LBS.intercalate " " (encodeUtf8 <$> (prg : prgArgs))
+      (cmdH2, cmdHashRest) = splitAt 2 $ showDigest $ hashlazy cmd
+      callDir = cacheDir </> cmdH2 </> cmdHashRest
+      outJson = callDir </> "out.json"
+      cmdFile = callDir </> "cmd.sh"
+  outJsonExist <- doesFileExist outJson
+  if outJsonExist
+    then do
+      jsonLbs <- readFileBS outJson
+      case eitherDecodeStrict jsonLbs of
+        Right x -> pure x
+        Left e ->
+          throwIO . stringException $
+          "Failed to parse output as JSON:\n" <> show jsonLbs <> "\nFrom: " <>
+          toString (T.intercalate " " prgArgs)  <> "\nError: " <> e
+    else do
+      prgOut <- liftIO (readProcess (toString prg) (toString <$> prgArgs) "")
+      let prgOutBs = encodeUtf8 prgOut
+      case eitherDecodeStrict prgOutBs  of
+        Right x -> do
+          createDirectoryIfMissing True callDir
+          writeFileBS outJson prgOutBs
+          writeFileLBS cmdFile cmd
+          pure x
+        Left e ->
+          throwIO . stringException $
+          "Failed to parse output as JSON:\n" <> prgOut <> "\nFrom: " <>
+          toString (T.intercalate " " prgArgs)  <> "\nError: " <> e
+
+data FetcherConf
+  = FetcherConf
+  { fetUrl :: DynamicUrl
+  , arch :: Architecture
+  , nixCache :: Tagged RawNixCacheOutput (Maybe FilePath)
+  }
+
+type FetcherM m = (MonadReader FetcherConf m, MonadIO m, MonadUnliftIO m)
+
+readJson :: (FetcherM m, FromJSON a) => Text -> [Text] -> m a
+readJson prg prgArgs = do
+  asks nixCache >>= \case
+    Tagged Nothing -> readJsonDirect prg prgArgs
+    Tagged (Just c) -> readJsonCached c prg prgArgs
 
 data RawFlakeOrigin
   = RawFlakeOrigin
@@ -82,10 +143,9 @@ data RawFlakeInfo
   } deriving (Show, Eq, Generic)
 instance FromJSON RawFlakeInfo
 
-nixFlakeInfo :: MonadIO m => FlakeUrl -> m RawFlakeInfo
+nixFlakeInfo :: FetcherM m => FlakeUrl -> m RawFlakeInfo
 nixFlakeInfo (FlakeUrl fu) =
   readJson "nix" ["flake", "metadata", "--json", fu]
-
 
 nixCurrentArch :: MonadIO m => m Architecture
 nixCurrentArch =
@@ -99,8 +159,7 @@ newtype RawFlakeOutputs
 
 instance FromJSON RawFlakeOutputs
 
-
-nixFlakeShow :: MonadIO m => FlakeUrl -> m RawFlakeOutputs
+nixFlakeShow :: FetcherM m => FlakeUrl -> m RawFlakeOutputs
 nixFlakeShow (FlakeUrl fu) =
   readJson "nix" ["flake", "show", "--json", fu]
 
@@ -130,7 +189,7 @@ data RawPackage
 
 instance FromJSON RawPackage
 
-nixEvalPkgMeta :: MonadIO m => FlakeUrl -> Architecture -> PackageName -> m RawPackage
+nixEvalPkgMeta :: FetcherM m => FlakeUrl -> Architecture -> PackageName -> m RawPackage
 nixEvalPkgMeta (FlakeUrl fu) (Architecture arch) (PackageName pn) =
   readJson "nix" ["eval", "--json", fu <> "#packages." <> arch <> "." <> pn <> ".meta" ]
 
@@ -145,10 +204,10 @@ rawPackageToPackageInfo rp =
   , broken = rp.broken
   }
 
-metaFlakeFromUrl :: (MonadReader Architecture m, MonadUnliftIO m) => FlakeUrl -> m MetaFlake
+metaFlakeFromUrl :: FetcherM m => FlakeUrl -> m MetaFlake
 metaFlakeFromUrl fu = do
   rfi <- nixFlakeInfo fu
-  curArch <- ask
+  curArch <- asks arch
   archPkgs <- fmap M.keys . M.filterWithKey (\a _ps -> a == curArch) . (\x -> x.packages) <$> nixFlakeShow fu
   metaPackages <- M.fromList <$> mapM mapArchPkgs (M.toList archPkgs)
   pure MetaFlake
@@ -164,34 +223,23 @@ metaFlakeFromUrl fu = do
           (arch, ) . M.fromList <$> mapM (\pkgName -> (pkgName,) <$> getPackageInfo arch pkgName)
             (filter (/= PackageName "default") pkgNames)
 
-uploadFlakeAndFetch :: (MonadReader Architecture m, MonadHttp m, MonadUnliftIO m) =>
-  DynamicUrl ->
+uploadFlakeAndFetch :: (FetcherM m, MonadHttp m) =>
   Maybe (FlakeUrl, Either Text MetaFlake)
   -> m ()
-uploadFlakeAndFetch surl f = do
+uploadFlakeAndFetch f = do
+  surl <- asks fetUrl
   jr <- dynReq POST surl "fetch-new-flake-submitions" (ReqBodyJson f) jsonResponse
   case responseBody jr of
-    Nothing -> uploadFlakeAndFetch surl Nothing
+    Nothing -> uploadFlakeAndFetch Nothing
     Just fu -> catchAny (go fu) (onEx fu)
   where
     onEx fu e =
-      uploadFlakeAndFetch surl (Just (fu, Left $ show e))
+      uploadFlakeAndFetch (Just (fu, Left $ show e))
     go fu =
-      uploadFlakeAndFetch surl . Just . (fu,) . Right =<< metaFlakeFromUrl fu
+      uploadFlakeAndFetch . Just . (fu,) . Right =<< metaFlakeFromUrl fu
 
--- xxx = MetaFlake
---   { description = Just "VPN bypass"
---   , packages = fromList
---     [("aarch64-darwin",fromList [])
---     ,("aarch64-linux",fromList [])
---     ,("x86_64-darwin",fromList [])
---     ,("x86_64-linux",fromList [])]
---   , rev = "29aaa5f650c4d08932646399aaad0904322f5536"
---   , flakeDeps = []
---   }
-
-runFetcher :: MonadUnliftIO m => DynamicUrl -> m ()
-runFetcher serviceUrl = do
+runFetcher :: MonadUnliftIO m => DynamicUrl -> Tagged RawNixCacheOutput (Maybe FilePath) -> m ()
+runFetcher serviceUrl rawNixCa = do
   ca <- nixCurrentArch
   recovering
     (fibonacciBackoff 100_000 <> limitRetries 1111)
@@ -202,4 +250,6 @@ runFetcher serviceUrl = do
             pure True
           _ -> pure False
     ]
-    (\_ -> runReq defaultHttpConfig $ runReaderT (uploadFlakeAndFetch serviceUrl Nothing) ca)
+    (\_ -> runReq defaultHttpConfig $
+      runReaderT (uploadFlakeAndFetch Nothing)
+      $ FetcherConf serviceUrl ca rawNixCa)

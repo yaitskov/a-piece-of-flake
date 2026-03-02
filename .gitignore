@@ -13,3 +13,5 @@
 /result-2
 /acid-flakes/
 /.direnv/
+/acid-flakes.bak/
+/fetcher-raw-nix-cache/

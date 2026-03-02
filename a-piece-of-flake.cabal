@@ -148,13 +148,17 @@ library
     , aeson                   < 3
     , aeson-pretty            < 1
     , binary                  < 1
+    , bytestring              < 1
+    , cryptohash-sha1         < 1
     , either                  < 6
     , exceptions              < 1
     , file-embed              < 1
+    , filepath                < 2
     , full-text-search        < 1
     , hnix                    < 1
     , http-types              < 1
     , monad-logger            < 1
+    , memory                  < 1
     , network                 < 4
     , non-empty               < 1
     , prettyprinter           < 2
