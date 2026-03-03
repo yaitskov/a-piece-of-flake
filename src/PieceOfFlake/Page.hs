@@ -31,6 +31,7 @@ data Ypp
 
 mkYesod "Ypp" [parseRoutes|
 /app.js AppJsR GET
+/style.css StyleR GET
 /robots.txt RobotsR GET
 /sitemap.xml SiteMapR GET
 / HomeR GET
@@ -58,7 +59,7 @@ sendStaticBs mime c = do
   pure . TypedContent mime $ toContent c
 
 getAppJsR, getFaviconR, getRobotsR, getGitHubR, getFlushSoundR :: Handler TypedContent
-getSnowSoundR, getSiteMapR, getAvalancheSoundR :: Handler TypedContent
+getSnowSoundR, getSiteMapR, getAvalancheSoundR, getStyleR :: Handler TypedContent
 getFaviconR = sendStaticBs typeSvg $(includeFile "assets/favicon.svg")
 getGitHubR = sendStaticBs typeSvg $(includeFile "assets/github.svg")
 getFlushSoundR = sendStaticBs mp3Mime $(includeFile "assets/flush.mp3")
@@ -67,12 +68,12 @@ getAvalancheSoundR = sendStaticBs mp3Mime $(includeFile "assets/avalanche.mp3")
 getSiteMapR = sendStaticBs typeXml $(includeFile "assets/sitemap.xml")
 getRobotsR = sendStaticBs typePlain $(includeFile "assets/robots.txt")
 getAppJsR = sendStaticBs typeJavascript $(includeFile "assets/app.js")
+getStyleR = sendStaticBs typeCss $(includeFile "assets/style.css")
 
 getHomeR :: Handler Html
 getHomeR =
  defaultLayout $ do
     setTitle "A Piece Of Flake"
-    baseCss
     metaTags
     [whamlet|
             <h1>
@@ -134,60 +135,10 @@ metaTags =
            <meta name="author" content="Daniil Iaitskov" />
            <meta name="keywords" content="nix flake repository" />
            <meta name="description" content="Nix Flake repository" />
-           <link rel="shortcut icon" href="favicon.svg" type="image/x-icon">
+           <link rel="shortcut icon" href="favicon.svg" type="image/x-icon" />
+           <link rel=stylesheet href=/style.css />
            <script src="/app.js"></script>
            |]
-
-baseCss :: WidgetFor Ypp ()
-baseCss =
-  toWidgetHead
-    [lucius|
-           body {
-               background: #7CED53;
-               background: radial-gradient(circle, rgb(182 213 217) 0%, rgb(205 255 253) 80%, rgb(206 214 255) 100%);
-               padding: 0px 4%;
-               color: #171717;
-           }
-           img.github {
-               width: 8vh;
-               opacity: 0.8;
-               padding-top: 5vh;
-           }
-           h1 a {
-             font-size: x-large;
-             text-decoration: none;
-             color: #e64d4d;
-
-             padding-left: 1.2lh;
-             background-size: auto 100%;
-             background-image: url(/favicon.svg);
-             background-repeat: no-repeat;
-           }
-           pre {
-               font-size: small;
-           }
-           .wrap {
-               white-space: pre-wrap;
-               text-indent: -2em;
-               padding-left: 2em;
-           }
-
-           #submition-form .SubmittedFlake,
-           #submition-form .FlakeIsBeingFetched,
-           #submition-form .BadFlake,
-           #submition-form .FlakeFetched,
-           #submition-form .FlakeIndexed {
-             display: none;
-           }
-           #submition-form.SubmittedFlake .SubmittedFlake,
-           #submition-form.FlakeIsBeingFetched .FlakeIsBeingFetched,
-           #submition-form.BadFlake .BadFlake,
-           #submition-form.FlakeFetched .FlakeFetched,
-           #submition-form.FlakeIndexed .FlakeIndexed {
-             display: inherit;
-           }
-           |]
-
 
 postSubmitFlakeR :: Handler Flake
 postSubmitFlakeR = do

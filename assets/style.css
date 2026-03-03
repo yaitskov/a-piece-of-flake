@@ -1,0 +1,45 @@
+/* A Piece of Flake */
+body {
+    background: #7CED53;
+    background: radial-gradient(circle, rgb(182 213 217) 0%, rgb(205 255 253) 80%, rgb(206 214 255) 100%);
+    padding: 0px 4%;
+    color: #171717;
+}
+img.github {
+    width: 8vh;
+    opacity: 0.8;
+    padding-top: 5vh;
+}
+h1 a {
+    font-size: x-large;
+    text-decoration: none;
+    color: #e64d4d;
+
+    padding-left: 1.2lh;
+    background-size: auto 100%;
+    background-image: url(/favicon.svg);
+    background-repeat: no-repeat;
+}
+pre {
+    font-size: small;
+}
+.wrap {
+    white-space: pre-wrap;
+    text-indent: -2em;
+    padding-left: 2em;
+}
+
+#submition-form .SubmittedFlake,
+#submition-form .FlakeIsBeingFetched,
+#submition-form .BadFlake,
+#submition-form .FlakeFetched,
+#submition-form .FlakeIndexed {
+    display: none;
+}
+#submition-form.SubmittedFlake .SubmittedFlake,
+#submition-form.FlakeIsBeingFetched .FlakeIsBeingFetched,
+#submition-form.BadFlake .BadFlake,
+#submition-form.FlakeFetched .FlakeFetched,
+#submition-form.FlakeIndexed .FlakeIndexed {
+    display: inherit;
+}
