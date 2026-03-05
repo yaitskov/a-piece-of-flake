@@ -103,7 +103,7 @@ loadIndexFromScratch fi fsm fs = do
   atomicalog $ do
     $(logInfo) "Started init full text search index population"
     mapM_ (go now) fs
-    $(logInfo) "Ened init full text search index population"
+    $(logInfo) "Ended init full text search index population"
   where
     go now = \case
       (_, ff@FlakeFetched {}) -> indexFlake now fi fsm ff

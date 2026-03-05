@@ -2,6 +2,7 @@
 module PieceOfFlake.CmdRun where
 
 import Control.Monad.Logger ( liftLoc, ToLogStr(toLogStr) )
+import Data.Time.Units ( Second )
 import Data.Version (showVersion)
 import Language.Haskell.TH.Syntax (qLocation)
 import PieceOfFlake.Acid
@@ -80,8 +81,8 @@ initRepo fsec acidFlakes = do
   loadIndexFromScratch fi flakesMap . reverse =<< loadFromDb acidFlakeStorage
   mkFlakeRepo fsec fi flakesMap acidFlakeStorage
 
-launchBackgroundThreads :: MonadUnliftIO m => FlakeRepo -> m ()
-launchBackgroundThreads fr = do
+launchBackgroundThreads :: MonadUnliftIO m => Tagged NoSubmitionHeartbeatSec Second -> FlakeRepo -> m ()
+launchBackgroundThreads period fr = do
   persisFlakeTid <- forkFinally
     (forever $ do
       recoverAll
@@ -97,7 +98,8 @@ launchBackgroundThreads fr = do
         Left e -> putStrLn $ "Flake text search indexer thread ended: " <> show e
         Right () -> putStrLn "Flake text search indexer thread without errors")
   putStrLn $ "Flake text search indexer thread is forked " <> show idxFlakeTid
-  efsTid <- forkFinally (sendEmtpyFlakeSubmition fr 30_000_000)
+  efsTid <- forkFinally
+    (forever $ sendEmtpyFlakeSubmition fr period)
     (\case
         Left e -> putStrLn $ "Empty Submition Thead ended: " <> show e
         Right () -> putStrLn "Empty Submition Thead ended without errors")
@@ -111,7 +113,7 @@ runCmd = \case
   WebService ws -> do
     $(trIo "start/ws")
     fr <- (`initRepo` ws.acidFlakes) =<< loadFetcherSecret ws.fetcherSecretPath
-    launchBackgroundThreads fr
+    launchBackgroundThreads ws.noSubmitionHeartbeat fr
 
     let y = Ypp fr ws.staticCache ws.baseUrl
 

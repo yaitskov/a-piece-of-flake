@@ -3,6 +3,7 @@ module PieceOfFlake.CmdArgs where
 
 import Data.Aeson ( FromJSON, ToJSON )
 import Data.Either.Combinators ( mapLeft )
+import Data.Time.Units
 import Network.HostName ( getHostName )
 import Options.Applicative
 import PieceOfFlake.Flake ( FetcherId(..) )
@@ -33,7 +34,7 @@ data WsCmdArgs
     , staticCache :: Tagged StaticCacheSeconds Word32
     , baseUrl :: Tagged BaseUrl Text
     , fetcherSecretPath :: Tagged FetcherSecret FilePath
-    , noSubmitionHeartbeat :: Tagged NoSubmitionHeartbeatSec Word32
+    , noSubmitionHeartbeat :: Tagged NoSubmitionHeartbeatSec Second
     }
   deriving Show
 
@@ -74,7 +75,7 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
 defaultPort :: Int
 defaultPort = 3003
 
-noSubmitionHeartbeatO :: Parser (Tagged NoSubmitionHeartbeatSec Word32)
+noSubmitionHeartbeatO :: Parser (Tagged NoSubmitionHeartbeatSec Second)
 noSubmitionHeartbeatO = Tagged <$>
   option auto
   ( long "heartbeat"

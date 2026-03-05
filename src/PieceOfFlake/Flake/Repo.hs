@@ -2,10 +2,11 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 module PieceOfFlake.Flake.Repo where
 
-import Data.Acid ( AcidState )
-import Data.Aeson ( FromJSON, ToJSON )
 import Control.Concurrent (threadDelay)
 import Control.Monad.Logger ( logError, logInfo, WriterLoggingT )
+import Data.Acid ( AcidState )
+import Data.Aeson ( FromJSON, ToJSON )
+import Data.Time.Units ( convertUnit, Microsecond, Second )
 import PieceOfFlake.Acid ( AcidFlakes )
 import PieceOfFlake.Flake
     ( Flake(FlakeFetched, SubmittedFlake, flakeUrl,
@@ -15,6 +16,7 @@ import PieceOfFlake.Flake
       MetaFlake,
       FetcherId(..) )
 import PieceOfFlake.CmdArgs
+    ( NoSubmitionHeartbeatSec, FetcherSecret )
 import PieceOfFlake.Index ( FlakeIndex )
 import PieceOfFlake.Prelude hiding (Map, show)
 import PieceOfFlake.Prelude qualified as P
@@ -149,9 +151,9 @@ addFetchedFlake fr ftid (fu, fetchedFlake) = do
           $(logError) $ "Error flake " <> P.show fu <> " is missing in map"
           pure Nothing
 
-sendEmtpyFlakeSubmition :: MonadIO m => FlakeRepo -> Int -> m ()
-sendEmtpyFlakeSubmition fr d = do
-  liftIO $ threadDelay d
+sendEmtpyFlakeSubmition :: MonadIO m => FlakeRepo -> Tagged NoSubmitionHeartbeatSec Second -> m ()
+sendEmtpyFlakeSubmition fr (Tagged d) = do
+  liftIO $ threadDelay $ fromIntegral (convertUnit d :: Microsecond)
   atomicalog $ do
     fql <- lift $ readTVar fr.fetcherQueueLen
     when (fql == 0) $ do
@@ -159,4 +161,3 @@ sendEmtpyFlakeSubmition fr d = do
       lift $ do
         writeTQueue fr.fetcherQueue Nothing
         modifyTVar' fr.fetcherQueueLen (1 +)
-  sendEmtpyFlakeSubmition fr d
