@@ -8,16 +8,17 @@ module PieceOfFlake.Page where
 
 import Data.Aeson ( encode )
 import Data.Map.Strict (elems)
-import PieceOfFlake.Th ( includeFile )
+import PieceOfFlake.CmdArgs ( StaticCacheSeconds, BaseUrl, FetcherSecret )
 import PieceOfFlake.Flake
     ( FlakeUrl,
       Flake(..),
       IpAdr(IpAdr),
       MetaFlake(description, packages, rev),
       PackageInfo(broken, name, description, license, unfree) )
-import PieceOfFlake.Index ( findFlakes )
 import PieceOfFlake.Flake.Repo
+import PieceOfFlake.Index ( findFlakes )
 import PieceOfFlake.Prelude hiding (Map, error, pi)
+import PieceOfFlake.Th ( includeFile )
 import PieceOfFlake.Yesod
     ( Ts(Ts),
       mp3Mime,
@@ -25,11 +26,9 @@ import PieceOfFlake.Yesod
       clientAdrToDec4,
       getClientAdr,
       internalError )
-
+import StmContainers.Map ( lookup )
 import Text.Blaze.Internal ( MarkupM )
 import Yesod.Core
-import PieceOfFlake.CmdArgs ( StaticCacheSeconds, BaseUrl )
-import StmContainers.Map ( lookup )
 
 
 data Ypp
@@ -430,13 +429,20 @@ postFetchNewFlakeSubmitionsR :: Handler (Maybe FlakeUrl)
 postFetchNewFlakeSubmitionsR = do
   Ypp { repo } <- getYesod
   requireCheckJsonBody >>= \case
-    FetcherReq fetcherId Nothing -> do
+    FetcherReq fetcherId Nothing fsec -> verifyFetcher fsec $ do
       putStrLn "Just Fetch nex FlakeUrl"
       r <- popFlakeSubmition repo fetcherId
       putBSLn $ toStrict $ encode r <> " :: Maybe Flake  <-> "  <> show r
       pure r
-    FetcherReq fetcherId (Just fetchedFlake) ->
+    FetcherReq fetcherId (Just fetchedFlake) fsec -> verifyFetcher fsec $ do
       addFetchedFlake repo fetcherId fetchedFlake
+
+verifyFetcher :: FetcherSecret -> Handler a -> Handler a
+verifyFetcher gotFsec a = do
+  Ypp { repo } <- getYesod
+  if gotFsec == repo.fetcherSecret
+    then a
+    else permissionDenied "secret mismatch"
 
 postFindFlakesR :: Handler [ FlakeUrl ]
 postFindFlakesR = do

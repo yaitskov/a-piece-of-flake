@@ -14,14 +14,17 @@ import PieceOfFlake.Flake
       IpAdr,
       MetaFlake,
       FetcherId(..) )
+import PieceOfFlake.CmdArgs
 import PieceOfFlake.Index ( FlakeIndex )
-import PieceOfFlake.Prelude hiding (Map)
+import PieceOfFlake.Prelude hiding (Map, show)
+import PieceOfFlake.Prelude qualified as P
 import PieceOfFlake.Stm ( newTQueueIO, readTQueue, writeTQueue, TQueue, atomicalog )
 import StmContainers.Map ( insert, lookup, newIO, Map )
 
 data FlakeRepo
   = FlakeRepo
   { flakes :: Map FlakeUrl Flake
+  , fetcherSecret :: FetcherSecret
   , acidFlakes :: AcidState AcidFlakes
   , fetcherIps :: Map FetcherId IpAdr
   , fetcherQueue :: TQueue (Maybe FlakeUrl)
@@ -32,10 +35,10 @@ data FlakeRepo
   , acidQueue :: TQueue (FlakeUrl, Flake)
   }
 
-mkFlakeRepo :: MonadIO m => TVar FlakeIndex -> Map FlakeUrl Flake -> AcidState AcidFlakes -> m FlakeRepo
-mkFlakeRepo fi flakesMap acidFlakeStorage = do
+mkFlakeRepo :: MonadIO m => FetcherSecret -> TVar FlakeIndex -> Map FlakeUrl Flake -> AcidState AcidFlakes -> m FlakeRepo
+mkFlakeRepo fetSec fi flakesMap acidFlakeStorage = do
   liftIO $
-    FlakeRepo flakesMap acidFlakeStorage <$>
+    FlakeRepo flakesMap fetSec acidFlakeStorage <$>
       newIO <*>
       newTQueueIO <*>
       newTQueueIO <*>
@@ -57,7 +60,7 @@ trySubmitFlakeToRepo ip fr fu = do
             lift $ modifyTVar' fr.fetcherQueueLen (1 +)
             lift $ writeTQueue fr.fetcherQueue $ Just fu
             fql <- lift $ readTVar fr.fetcherQueueLen
-            $(logInfo) $ "Fetcher queue increased to " <> show fql
+            $(logInfo) $ "Fetcher queue increased to " <> P.show fql
             let f = SubmittedFlake fu now ip in do
               lift $ insert f fu fr.flakes
               pure $ Right f
@@ -78,7 +81,7 @@ popFlakeSubmitionStm ftid fr now = do
   fSub <- lift $ readTQueue fr.fetcherQueue
   lift $ modifyTVar' fr.fetcherQueueLen (\x -> x - 1)
   fql <- lift $ readTVar fr.fetcherQueueLen
-  $(logInfo) $ "Fetcher queue decreased to " <> show fql
+  $(logInfo) $ "Fetcher queue decreased to " <> P.show fql
   case fSub of
     Nothing -> pure fSub
     Just fu ->
@@ -88,19 +91,20 @@ popFlakeSubmitionStm ftid fr now = do
             lift $ insert (FlakeIsBeingFetched flakeUrl now ftid) fu fr.flakes
             pure $ Just flakeUrl
           | otherwise -> do
-            $(logError) $ "Error flake url mismatch " <> show fu <> " <> " <> show flakeUrl
+            $(logError) $ "Error flake url mismatch " <> P.show fu <> " <> " <> P.show flakeUrl
             popFlakeSubmitionStm ftid fr now
         Just ufs -> do
-          $(logError) $ "Expected SumbittedFlake state but:" <> show ufs
+          $(logError) $ "Expected SumbittedFlake state but:" <> P.show ufs
           popFlakeSubmitionStm ftid fr now
         Nothing -> do
-          $(logError) $ "Error flake " <> show fu <> " is missing in map"
+          $(logError) $ "Error flake " <> P.show fu <> " is missing in map"
           popFlakeSubmitionStm ftid fr now
 
 data FetcherReq
   = FetcherReq
   { fetcherId :: FetcherId
   , fetcherResponse :: Maybe (FlakeUrl, Either Text MetaFlake)
+  , fetcherSecret :: FetcherSecret
   } deriving (Show, Eq, Generic)
 
 instance FromJSON FetcherReq
@@ -123,26 +127,26 @@ addFetchedFlake fr ftid (fu, fetchedFlake) = do
             case fetchedFlake of
               Left e -> do
                 lift $ insert (BadFlake fu now e) fu fr.flakes
-                $(logInfo) $ "Fetching flake " <> show fu <> " failed in " <> show (duration now past)
+                $(logInfo) $ "Fetching flake " <> P.show fu <> " failed in " <> P.show (duration now past)
                 popFlakeSubmitionStm ftid fr now
               Right meta -> do
                 let f = FlakeFetched fu now meta
                 lift $ insert f fu fr.flakes
-                $(logInfo) $ "Flake " <> show fu <> " is fetched in " <> show (duration now past)
+                $(logInfo) $ "Flake " <> P.show fu <> " is fetched in " <> P.show (duration now past)
                 lift $ writeTQueue fr.indexerQueue fu
                 lift $ writeTQueue fr.acidQueue (fu, f)
                 lift $ modifyTVar' fr.indexerQueueLen (1 +)
                 iql <- lift $ readTVar fr.indexerQueueLen
-                $(logInfo) $ "Indexer queue increased to " <> show iql
+                $(logInfo) $ "Indexer queue increased to " <> P.show iql
                 popFlakeSubmitionStm ftid fr now
           | otherwise -> do
-              $(logError) $ "Error flake url mismatch " <> show fu <> " <> " <> show exFu
+              $(logError) $ "Error flake url mismatch " <> P.show fu <> " <> " <> P.show exFu
               pure Nothing
         Just ufs -> do
-          $(logError) $ "Expected FlakeIsBeingFetched state but: " <> show ufs
+          $(logError) $ "Expected FlakeIsBeingFetched state but: " <> P.show ufs
           pure Nothing
         Nothing -> do
-          $(logError) $ "Error flake " <> show fu <> " is missing in map"
+          $(logError) $ "Error flake " <> P.show fu <> " is missing in map"
           pure Nothing
 
 sendEmtpyFlakeSubmition :: MonadIO m => FlakeRepo -> Int -> m ()

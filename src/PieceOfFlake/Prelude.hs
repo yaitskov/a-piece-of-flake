@@ -1,6 +1,7 @@
 module PieceOfFlake.Prelude
   ( module X
   , duration
+  , readFileTxt
   ) where
 
 import Data.Time.Clock as X
@@ -12,3 +13,6 @@ import UnliftIO as X (MonadUnliftIO, finally, catchAny, stringException, throwIO
 
 duration :: UTCTime -> UTCTime -> Double
 duration a b = realToFrac $ diffUTCTime a b
+
+readFileTxt :: MonadIO m => FilePath -> m Text
+readFileTxt fp = decodeUtf8 <$>  readFileBS fp

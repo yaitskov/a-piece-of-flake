@@ -15,7 +15,7 @@ import Data.ByteString.Char8 qualified as BS8
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as M
 import Data.Text qualified as T
-import PieceOfFlake.CmdArgs ( RawNixCacheOutput )
+import PieceOfFlake.CmdArgs ( RawNixCacheOutput, FetcherSecret )
 import PieceOfFlake.Flake
     ( FlakeUrl(..),
       Architecture(..),
@@ -24,6 +24,7 @@ import PieceOfFlake.Flake
       MetaFlake(..),
       FetcherId )
 import PieceOfFlake.Prelude
+import PieceOfFlake.Flake.Repo
 import PieceOfFlake.Req
     ( DynamicUrl,
       MonadHttp,
@@ -102,6 +103,7 @@ data FetcherConf
   , arch :: Architecture
   , nixCache :: Tagged RawNixCacheOutput (Maybe FilePath)
   , fetcherId :: FetcherId
+  , fetcherSecret :: FetcherSecret
   }
 
 type FetcherM m = (MonadReader FetcherConf m, MonadIO m, MonadUnliftIO m)
@@ -232,8 +234,9 @@ uploadFlakeAndFetch :: (FetcherM m, MonadHttp m) =>
   Maybe (FlakeUrl, Either Text MetaFlake)
   -> m ()
 uploadFlakeAndFetch f = do
-  surl <- asks fetUrl
-  jr <- dynReq POST surl "fetch-new-flake-submitions" (ReqBodyJson f) jsonResponse
+  fctx <- ask
+  let rqb = ReqBodyJson $ FetcherReq fctx.fetcherId f fctx.fetcherSecret
+  jr <- dynReq POST fctx.fetUrl "fetch-new-flake-submitions" rqb  jsonResponse
   case responseBody jr of
     Nothing -> uploadFlakeAndFetch Nothing
     Just fu -> catchAny (go fu) (onEx fu)
@@ -247,8 +250,9 @@ runFetcher :: MonadUnliftIO m =>
   DynamicUrl ->
   Tagged RawNixCacheOutput (Maybe FilePath) ->
   FetcherId ->
+  FetcherSecret ->
   m ()
-runFetcher serviceUrl rawNixCa fid = do
+runFetcher serviceUrl rawNixCa fid fsec = do
   ca <- nixCurrentArch
   recovering
     (fibonacciBackoff 100_000 <> limitRetries 3)
@@ -265,4 +269,4 @@ runFetcher serviceUrl rawNixCa fid = do
     ]
     (\_ -> runReq defaultHttpConfig $
       runReaderT (uploadFlakeAndFetch Nothing)
-      $ FetcherConf serviceUrl ca rawNixCa fid)
+      $ FetcherConf serviceUrl ca rawNixCa fid fsec)

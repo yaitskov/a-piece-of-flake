@@ -1,12 +1,15 @@
 module PieceOfFlake.CmdArgs where
 
+import Data.Aeson ( FromJSON, ToJSON )
 import Data.Either.Combinators ( mapLeft )
 import Network.HostName ( getHostName )
 import Options.Applicative
 import PieceOfFlake.Flake
 import PieceOfFlake.Prelude
+import PieceOfFlake.Prelude qualified as P
 import PieceOfFlake.Req
     ( DynamicUrl(UrlHttp), http, port, parseUrl )
+import Text.Show ( Show(show) )
 
 data HttpPort
 data Cert
@@ -16,6 +19,10 @@ data StaticCacheSeconds
 data RawNixCacheOutput
 data BaseUrl
 
+newtype FetcherSecret = FetcherSecret Text deriving (Eq, Generic, FromJSON, ToJSON)
+instance Show FetcherSecret where
+  show _ = "****"
+
 data CmdArgs
   = WebService
     { httpPortToListen :: Tagged HttpPort Int
@@ -24,11 +31,13 @@ data CmdArgs
     , acidFlakes :: Tagged AcidFlakesPath FilePath
     , staticCache :: Tagged StaticCacheSeconds Word32
     , baseUrl :: Tagged BaseUrl Text
+    , fetcherSecretPath :: Tagged FetcherSecret FilePath
     }
   | FetcherJob
     { webServiceUrl :: DynamicUrl
     , rawNixCache :: Tagged RawNixCacheOutput (Maybe FilePath)
     , fetcherId :: FetcherId
+    , fetcherSecretPath :: Tagged FetcherSecret FilePath
     }
   | PieceOfFlakeVersion
   deriving Show
@@ -36,8 +45,11 @@ data CmdArgs
 execWithArgs :: MonadIO m => (CmdArgs -> m a) -> [String] -> m a
 execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPrefs (info (cmdp <**> helper) phelp) args)
   where
-    serviceP = WebService <$> portOption <*> certO <*> certKeyO <*> acidOption <*> cacheSecondsO <*> baseUrlO
-    fetcherP = FetcherJob <$> urlOption <*> rawNixCacheO <*> customFetcherIdO
+    serviceP = WebService <$> portOption <*> certO <*>
+      certKeyO <*> acidOption <*> cacheSecondsO <*>
+      baseUrlO <*> fetcherSecretPathO
+    fetcherP = FetcherJob <$> urlOption <*> rawNixCacheO <*>
+      customFetcherIdO <*> fetcherSecretPathO
     cmdp =
       hsubparser
         (  command "web" (infoP serviceP "launch web service")
@@ -91,6 +103,17 @@ customFetcherIdO = FetcherId . toText <$>
     <> metavar "FID"
   )
 
+fetcherSecretPathO :: Parser (Tagged FetcherSecret FilePath)
+fetcherSecretPathO = Tagged <$>
+  option str
+  ( long "fetcher-secret"
+    <> short 's'
+    <> showDefault
+    <> value ".fetcher-secret"
+    <> help "path to file with secret for fetcher authentication on web service"
+    <> metavar "SECRET"
+  )
+
 acidOption :: Parser (Tagged AcidFlakesPath FilePath)
 acidOption = Tagged <$>
   option str
@@ -108,7 +131,7 @@ baseUrlO = Tagged <$>
   ( long "base-url"
     <> short 'u'
     <> showDefault
-    <> value ("http://localhost:" <> show defaultPort)
+    <> value ("http://localhost:" <> P.show defaultPort)
     <> help "base web service url for HTML links"
     <> metavar "URL"
   )

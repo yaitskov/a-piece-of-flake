@@ -7,9 +7,10 @@ import Language.Haskell.TH.Syntax (qLocation)
 import PieceOfFlake.Acid
     ( loadFromDb, openFlakeDb, runPersistQueue )
 import PieceOfFlake.CmdArgs
-    ( CmdArgs(keyFile, WebService, FetcherJob, PieceOfFlakeVersion,
+    ( CmdArgs(keyFile, WebService, FetcherJob, PieceOfFlakeVersion, fetcherSecretPath,
               httpPortToListen, acidFlakes, staticCache, baseUrl, certFile),
       Cert,
+      FetcherSecret (..),
       CertKey,
       AcidFlakesPath )
 import PieceOfFlake.Fetcher ( runFetcher )
@@ -77,13 +78,13 @@ mkTlsSettings cert key = tlsSettings (untag cert) (untag key)
 runPlain :: Settings -> Application -> IO ()
 runPlain = runSettings
 
-initRepo :: MonadIO m => Tagged AcidFlakesPath FilePath -> m FlakeRepo
-initRepo acidFlakes = do
+initRepo :: MonadIO m => FetcherSecret -> Tagged AcidFlakesPath FilePath -> m FlakeRepo
+initRepo fsec acidFlakes = do
   flakesMap <- liftIO newIO
   fi <- newTVarIO emptyFlakeIndex
   acidFlakeStorage <- openFlakeDb acidFlakes
   loadIndexFromScratch fi flakesMap . reverse =<< loadFromDb acidFlakeStorage
-  mkFlakeRepo fi flakesMap acidFlakeStorage
+  mkFlakeRepo fsec fi flakesMap acidFlakeStorage
 
 launchBackgroundThreads :: MonadUnliftIO m => FlakeRepo -> m ()
 launchBackgroundThreads fr = do
@@ -114,7 +115,7 @@ runCmd :: CmdArgs -> IO ()
 runCmd = \case
   ws@WebService {} -> do
     $(trIo "start/ws")
-    fr <- initRepo ws.acidFlakes
+    fr <- (`initRepo` ws.acidFlakes) =<< loadFetcherSecret ws.fetcherSecretPath
     launchBackgroundThreads fr
 
     let y = Ypp fr ws.staticCache ws.baseUrl
@@ -123,7 +124,10 @@ runCmd = \case
     case liftA2 mkTlsSettings ws.certFile ws.keyFile of
       Nothing -> runPlain (mkSettings y ws logger) =<< toWaiApp y
       Just tlsSngs -> runTLS tlsSngs (mkSettings y ws logger) =<< toWaiApp y
-  FetcherJob serUrl rawNixCache fid ->
-    runFetcher serUrl rawNixCache fid
+  FetcherJob serUrl rawNixCache fid fSecPath ->
+    runFetcher serUrl rawNixCache fid =<< loadFetcherSecret fSecPath
   PieceOfFlakeVersion ->
     putStrLn $ "Version " <> showVersion version
+
+loadFetcherSecret :: MonadIO m => Tagged FetcherSecret FilePath -> m FetcherSecret
+loadFetcherSecret a = readFileTxt (untag a) <&> FetcherSecret
