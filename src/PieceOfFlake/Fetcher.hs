@@ -17,7 +17,7 @@ import Data.Map.Strict qualified as M
 import Data.Text qualified as T
 import PieceOfFlake.CmdArgs ( RawNixCacheOutput, FetcherSecret )
 import PieceOfFlake.Flake
-import PieceOfFlake.Flake.Repo
+import PieceOfFlake.Flake.Repo ( FetcherReq(FetcherReq) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req
     ( DynamicUrl,
@@ -153,9 +153,10 @@ nixCurrentArch =
   Architecture . toText <$>
   liftIO (readProcess "nix" (toString <$> words "eval --impure --raw --expr builtins.currentSystem") "")
 
-newtype RawFlakeOutputs
+data RawFlakeOutputs
   = RawFlakeOutputs
   { packages :: Map Architecture (Map PackageName ())
+  , nixosModules :: Map Text ()
   } deriving (Show, Eq, Generic)
 
 instance FromJSON RawFlakeOutputs
@@ -209,12 +210,14 @@ metaFlakeFromUrl :: FetcherM m => FlakeUrl -> m MetaFlake
 metaFlakeFromUrl fu = do
   rfi <- nixFlakeInfo fu
   curArch <- asks arch
-  archPkgs <- fmap M.keys . M.filterWithKey (\a _ps -> a == curArch) . (\x -> x.packages) <$> nixFlakeShow fu
+  rfo <- nixFlakeShow fu
+  let archPkgs = fmap M.keys . M.filterWithKey (\a _ps -> a == curArch) $ rfo.packages
   metaPackages <- M.fromList <$> mapM mapArchPkgs (M.toList archPkgs)
   pure MetaFlake
     { description = rfi.description
     , packages = metaPackages
     , rev = rfi.revision
+    , hasNixOsModules = M.size rfo.nixosModules > 0
     , flakeDeps = []
     }
   where

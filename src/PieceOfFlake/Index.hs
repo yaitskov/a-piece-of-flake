@@ -26,7 +26,7 @@ import NLP.Tokenize.Text ( tokenize )
 import PieceOfFlake.Flake
     ( Flake(flakeUrl, FlakeIndexed, FlakeFetched, meta),
       FlakeUrl, isIndexed,
-      MetaFlake(packages, description),
+      MetaFlake(packages, description, hasNixOsModules),
       PackageInfo(broken, description, license, name, unfree) )
 import PieceOfFlake.Prelude hiding (pi, Map)
 import PieceOfFlake.Stm ( readTQueue, TQueue, atomicalog )
@@ -47,6 +47,7 @@ extractTerms :: (FlakeUrl, MetaFlake) -> () -> [Term]
 extractTerms (fu, mf) () =
   concatMap tokenize (maybeToList mf.description) <> [toText fu] <> (toText <$> M.keys mf.packages)
   <> (concatMap packageInfoToTerms .  concatMap M.elems $ M.elems mf.packages)
+  <> memptyIfFalse mf.hasNixOsModules ["nixosModules"]
 
 emptyFlakeIndex :: FlakeIndex
 emptyFlakeIndex =

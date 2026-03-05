@@ -61,6 +61,7 @@ data MetaFlake
   = MetaFlake
   { description :: Maybe Text
   , packages :: M.Map Architecture (M.Map PackageName PackageInfo)
+  , hasNixOsModules :: Bool
   , rev :: Text
   , flakeDeps :: [ FlakeUrl ]
   } deriving (Show, Eq, Generic)
