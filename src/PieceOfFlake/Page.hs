@@ -97,7 +97,7 @@ getSearchR =
     navBar
     [whamlet|
             <section class="section pt-5">
-              <h1 class="title is-4">
+              <h1 class="title is-4 mb-3">
                 Nix Flake Search
 
               <form method=post onsubmit="return searchFlakesBy(pattern.value)">
@@ -137,8 +137,8 @@ getPublicationR =
     metaTags
     navBar
     [whamlet|
-      <section class=section>
-        <h1 class="title is-4">
+      <section class="section pt-4">
+        <h1 class="title is-4 mb-3">
           Nix Flake Publication
         <div class=submition-form>
           <form method=post onsubmit="return submitFlake(url.value)">
@@ -199,8 +199,8 @@ getFlakeR fu = do
     metaTags
     navBar
     [whamlet|
-          <section class="section">
-            <h1 class="title is-4">
+          <section class="section pt-4">
+            <h1 class="title is-4 mb-3">
               Flake
             ^{fw}
             |]
@@ -226,7 +226,7 @@ getFlakeR fu = do
                     Status
                   <td>
                     <details>
-                      <summary>
+                      <summary class="notification is-info p-1">
                         Submitted
                       The request for flake publication is accepted.
                       Request status life-cycle:
@@ -260,7 +260,7 @@ getFlakeR fu = do
                     Status
                   <td>
                     <details>
-                      <summary>
+                      <summary class="notification is-info p-1">
                         On Fetcher
                       Fetcher (Worker) picked up the request
                       for downloadand evaluation of the flake.
@@ -289,7 +289,7 @@ getFlakeR fu = do
                     Status
                   <td>
                     <details>
-                      <summary class="notification is-danger">
+                      <summary class="notification is-danger p-1">
                         Rejected
                       Fetcher failed to obtain flake or parse it.
                       Check flake url and error message.
@@ -322,7 +322,7 @@ getFlakeR fu = do
                        Status
                      <td>
                        <details>
-                         <summary class="notification is-warning">
+                         <summary class="notification is-warning p-1">
                            Fetched
                          Information about the flake is fetched by fetcher
                          and uploaded into database for consequent indexing.
@@ -331,7 +331,7 @@ getFlakeR fu = do
                        Timestamp
                      <td>
                        #{Ts uploadedAt}
-               <h6 class="title is-6">
+               <h6 class="title is-6 mb-3">
                  Packages
                ^{pkgWgs}
                    |]
@@ -352,7 +352,7 @@ getFlakeR fu = do
                        Status
                      <td>
                        <details>
-                         <summary class="notification is-success">
+                         <summary class="notification is-success p-1">
                            Indexed
                          The flake has been indexed and now is discoverable by search
                    <tr>
@@ -371,7 +371,7 @@ getFlakeR fu = do
                      <td>
                        #{fromMaybe "n/a" meta.description}
 
-               <h4 class="title is-4">
+               <h4 class="title is-4 mb-3">
                  Packages
                ^{pkgWgs}
                    |]

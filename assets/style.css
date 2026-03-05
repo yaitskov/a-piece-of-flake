@@ -12,7 +12,7 @@
     initial-value: #7ebae4;
 }
 
-.navbar-brand .navbar-time a {
+.navbar .navbar-brand a.navbar-item {
     color: var(--navy-logo-color);
 }
 
@@ -24,6 +24,8 @@ body {
     background: radial-gradient(circle, var(--blue-logo-color) 0%, var(--blue-logo-color) 80%, var(--navy-logo-color) 100%);
     color: #171717;
     min-height: 100vh;
+    overflow: scroll !important;
+    --bulma-body-overflow-x: scroll !important;
 }
 
 body .table {
