@@ -24,10 +24,13 @@ import Data.SearchEngine
 import ListT qualified as L
 import NLP.Tokenize.Text ( tokenize )
 import PieceOfFlake.Flake
-    ( Flake(flakeUrl, FlakeIndexed, FlakeFetched, meta),
-      FlakeUrl, isIndexed,
-      MetaFlake(packages, description, hasNixOsModules),
-      PackageInfo(broken, description, license, name, unfree) )
+    ( FlakeUrl,
+      Flake(flakeUrl, FlakeIndexed, FlakeFetched, meta),
+      PackageInfo(broken, description, license, name, unfree),
+      MetaFlake(hasNixOsModules, description, packages),
+      isIndexed,
+      repoOfFlakeUrl )
+
 import PieceOfFlake.Prelude hiding (pi, Map)
 import PieceOfFlake.Stm ( readTQueue, TQueue, atomicalog )
 import StmContainers.Map ( insert, listTNonAtomic, lookup, Map )
@@ -45,7 +48,8 @@ packageInfoToTerms pi =
 
 extractTerms :: (FlakeUrl, MetaFlake) -> () -> [Term]
 extractTerms (fu, mf) () =
-  concatMap tokenize (maybeToList mf.description) <> [toText fu] <> (toText <$> M.keys mf.packages)
+  concatMap tokenize (maybeToList mf.description)
+  <> [repoOfFlakeUrl fu] <> (toText <$> M.keys mf.packages)
   <> (concatMap packageInfoToTerms .  concatMap M.elems $ M.elems mf.packages)
   <> memptyIfFalse mf.hasNixOsModules ["nixosModules"]
 
@@ -88,7 +92,7 @@ indexFlake now fi fs f =
   case f of
    ff@FlakeFetched { flakeUrl } ->
      let fu = flakeUrl
-         ixf  = FlakeIndexed fu now ff.meta
+         ixf = FlakeIndexed fu now ff.meta
      in
        do
          lift $ do

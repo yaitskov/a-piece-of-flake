@@ -4,6 +4,7 @@ module PieceOfFlake.Flake where
 import Data.Aeson ( FromJSONKey, ToJSONKey, encode )
 import Data.Map.Strict qualified as M
 import Data.SafeCopy ( deriveSafeCopy, base )
+import Data.Text qualified as T
 import PieceOfFlake.Prelude hiding (Map)
 import Text.Blaze ( ToMarkup )
 import Yesod.Core
@@ -30,6 +31,10 @@ instance ToContent [FlakeUrl] where
   toContent = toContent . encode
 instance ToTypedContent [FlakeUrl] where
   toTypedContent = TypedContent typeJson . toContent
+
+repoOfFlakeUrl :: FlakeUrl -> Text
+repoOfFlakeUrl (FlakeUrl fu) = T.drop 1 $ T.dropWhile (/= '/') fu
+
 newtype Architecture = Architecture Text
   deriving newtype
   ( Show, Eq, Ord, Hashable
