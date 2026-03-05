@@ -15,7 +15,7 @@ import Data.ByteString.Char8 qualified as BS8
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as M
 import Data.Text qualified as T
-import PieceOfFlake.CmdArgs ( RawNixCacheOutput )
+import PieceOfFlake.CmdArgs ( RawNixCacheOutput, FetcherId )
 import PieceOfFlake.Req
     ( DynamicUrl,
       MonadHttp,
@@ -99,6 +99,7 @@ data FetcherConf
   { fetUrl :: DynamicUrl
   , arch :: Architecture
   , nixCache :: Tagged RawNixCacheOutput (Maybe FilePath)
+  , fetcherId :: FetcherId
   }
 
 type FetcherM m = (MonadReader FetcherConf m, MonadIO m, MonadUnliftIO m)
@@ -239,8 +240,12 @@ uploadFlakeAndFetch f = do
     go fu =
       uploadFlakeAndFetch . Just . (fu,) . Right =<< metaFlakeFromUrl fu
 
-runFetcher :: MonadUnliftIO m => DynamicUrl -> Tagged RawNixCacheOutput (Maybe FilePath) -> m ()
-runFetcher serviceUrl rawNixCa = do
+runFetcher :: MonadUnliftIO m =>
+  DynamicUrl ->
+  Tagged RawNixCacheOutput (Maybe FilePath) ->
+  FetcherId ->
+  m ()
+runFetcher serviceUrl rawNixCa fid = do
   ca <- nixCurrentArch
   recovering
     (fibonacciBackoff 100_000 <> limitRetries 3)
@@ -257,4 +262,4 @@ runFetcher serviceUrl rawNixCa = do
     ]
     (\_ -> runReq defaultHttpConfig $
       runReaderT (uploadFlakeAndFetch Nothing)
-      $ FetcherConf serviceUrl ca rawNixCa)
+      $ FetcherConf serviceUrl ca rawNixCa fid)

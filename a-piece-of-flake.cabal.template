@@ -90,6 +90,7 @@ library
     , filepath                < 2
     , full-text-search        < 1
     , hnix                    < 1
+    , hostname                < 2
     , http-types              < 1
     , list-t                  < 2
     , monad-logger            < 1

@@ -1,6 +1,7 @@
 module PieceOfFlake.CmdArgs where
 
 import Data.Either.Combinators ( mapLeft )
+import Network.HostName ( getHostName )
 import Options.Applicative
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req
@@ -13,6 +14,7 @@ data AcidFlakesPath
 data StaticCacheSeconds
 data RawNixCacheOutput
 data BaseUrl
+newtype FetcherId = FetcherId Text deriving newtype (Show, Eq, Ord, IsString, Read)
 
 data CmdArgs
   = WebService
@@ -26,6 +28,7 @@ data CmdArgs
   | FetcherJob
     { webServiceUrl :: DynamicUrl
     , rawNixCache :: Tagged RawNixCacheOutput (Maybe FilePath)
+    , fetcherId :: FetcherId
     }
   | PieceOfFlakeVersion
   deriving Show
@@ -34,7 +37,7 @@ execWithArgs :: MonadIO m => (CmdArgs -> m a) -> [String] -> m a
 execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPrefs (info (cmdp <**> helper) phelp) args)
   where
     serviceP = WebService <$> portOption <*> certO <*> certKeyO <*> acidOption <*> cacheSecondsO <*> baseUrlO
-    fetcherP = FetcherJob <$> urlOption <*> rawNixCacheO
+    fetcherP = FetcherJob <$> urlOption <*> rawNixCacheO <*> customFetcherIdO
     cmdp =
       hsubparser
         (  command "web" (infoP serviceP "launch web service")
@@ -76,6 +79,17 @@ rawNixCacheO = Tagged <$>
       "null" -> pure Nothing
       "-" -> pure Nothing
       o -> pure $ Just o
+
+customFetcherIdO :: Parser FetcherId
+customFetcherIdO = FetcherId . toText <$>
+  option str
+  ( long "fetcher-id"
+    <> short 'i'
+    <> showDefault
+    <> value (unsafePerformIO getHostName)
+    <> help "fetcher id"
+    <> metavar "FID"
+  )
 
 acidOption :: Parser (Tagged AcidFlakesPath FilePath)
 acidOption = Tagged <$>

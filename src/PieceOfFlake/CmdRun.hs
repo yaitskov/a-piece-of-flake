@@ -123,7 +123,7 @@ runCmd = \case
     case liftA2 mkTlsSettings ws.certFile ws.keyFile of
       Nothing -> runPlain (mkSettings y ws logger) =<< toWaiApp y
       Just tlsSngs -> runTLS tlsSngs (mkSettings y ws logger) =<< toWaiApp y
-  FetcherJob serUrl rawNixCache ->
-    runFetcher serUrl rawNixCache
+  FetcherJob serUrl rawNixCache fid ->
+    runFetcher serUrl rawNixCache fid
   PieceOfFlakeVersion ->
     putStrLn $ "Version " <> showVersion version
