@@ -4,7 +4,7 @@ import Data.Aeson ( FromJSON, ToJSON )
 import Data.Either.Combinators ( mapLeft )
 import Network.HostName ( getHostName )
 import Options.Applicative
-import PieceOfFlake.Flake
+import PieceOfFlake.Flake ( FetcherId(..) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Prelude qualified as P
 import PieceOfFlake.Req

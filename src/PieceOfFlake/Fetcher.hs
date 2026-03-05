@@ -17,14 +17,8 @@ import Data.Map.Strict qualified as M
 import Data.Text qualified as T
 import PieceOfFlake.CmdArgs ( RawNixCacheOutput, FetcherSecret )
 import PieceOfFlake.Flake
-    ( FlakeUrl(..),
-      Architecture(..),
-      PackageName(..),
-      PackageInfo(..),
-      MetaFlake(..),
-      FetcherId )
-import PieceOfFlake.Prelude
 import PieceOfFlake.Flake.Repo
+import PieceOfFlake.Prelude
 import PieceOfFlake.Req
     ( DynamicUrl,
       MonadHttp,
@@ -42,10 +36,11 @@ import PieceOfFlake.Req
 
 import System.Process ( readProcess )
 import UnliftIO.Retry
-    ( fibonacciBackoff, recovering, limitRetries )
+    ( fibonacciBackoff, recovering, recoverAll, limitRetries, constantDelay )
 import UnliftIO.Directory
     ( doesFileExist, createDirectoryIfMissing )
 import System.FilePath ( (</>) )
+
 
 showDigest :: ByteString -> String
 showDigest = BS8.unpack . convertToBase Base16
@@ -236,7 +231,20 @@ uploadFlakeAndFetch :: (FetcherM m, MonadHttp m) =>
 uploadFlakeAndFetch f = do
   fctx <- ask
   let rqb = ReqBodyJson $ FetcherReq fctx.fetcherId f fctx.fetcherSecret
-  jr <- dynReq POST fctx.fetUrl "fetch-new-flake-submitions" rqb  jsonResponse
+  jr <- recovering
+          (fibonacciBackoff 100_000 <> limitRetries 10)
+          [ \_rs -> Handler $
+              \case
+                he@VanillaHttpException {} -> do
+                  case isStatusCodeException he of
+                    Nothing -> pure False
+                    Just r ->
+                      case responseStatusCode r of
+                        scode ->
+                          pure $ scode < 400 || scode >= 500
+                _ -> pure False
+          ]
+          (\_ -> dynReq POST fctx.fetUrl "fetch-new-flake-submitions" rqb jsonResponse)
   case responseBody jr of
     Nothing -> uploadFlakeAndFetch Nothing
     Just fu -> catchAny (go fu) (onEx fu)
@@ -254,19 +262,9 @@ runFetcher :: MonadUnliftIO m =>
   m ()
 runFetcher serviceUrl rawNixCa fid fsec = do
   ca <- nixCurrentArch
-  recovering
-    (fibonacciBackoff 100_000 <> limitRetries 3)
-    [ \_rs -> Handler $
-        \case
-          he@VanillaHttpException {} -> do
-            case isStatusCodeException he of
-              Nothing -> pure False
-              Just r ->
-                case responseStatusCode r of
-                  scode ->
-                    pure $ scode < 400 || scode >= 500
-          _ -> pure False
-    ]
-    (\_ -> runReq defaultHttpConfig $
-      runReaderT (uploadFlakeAndFetch Nothing)
-      $ FetcherConf serviceUrl ca rawNixCa fid fsec)
+  forever $ do
+    recoverAll
+      (constantDelay 6_000_000)
+      (\_ -> runReq defaultHttpConfig $
+        runReaderT (uploadFlakeAndFetch Nothing)
+          $ FetcherConf serviceUrl ca rawNixCa fid fsec)
