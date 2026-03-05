@@ -9,12 +9,13 @@ import Data.Aeson ( FromJSON, ToJSON )
 import Data.Time.Units ( convertUnit, Microsecond, Second )
 import PieceOfFlake.Acid ( AcidFlakes )
 import PieceOfFlake.Flake
-    ( Flake(FlakeFetched, SubmittedFlake, flakeUrl,
-            FlakeIsBeingFetched, BadFlake),
-      FlakeUrl,
-      IpAdr,
+    ( FlakeUrl(..),
+      Flake(FlakeFetched, SubmittedFlake, flakeUrl, FlakeIsBeingFetched,
+            BadFlake),
+      FetcherId,
       MetaFlake,
-      FetcherId(..) )
+      IpAdr,
+      RawFlakeUrl(..) )
 import PieceOfFlake.CmdArgs
     ( NoSubmitionHeartbeatSec, FetcherSecret )
 import PieceOfFlake.Index ( FlakeIndex )
@@ -22,6 +23,7 @@ import PieceOfFlake.Prelude hiding (Map, show)
 import PieceOfFlake.Prelude qualified as P
 import PieceOfFlake.Stm ( newTQueueIO, readTQueue, writeTQueue, TQueue, atomicalog )
 import StmContainers.Map ( insert, lookup, newIO, Map )
+import Text.Regex.TDFA ( (=~) )
 
 data FlakeRepo
   = FlakeRepo
@@ -161,3 +163,9 @@ sendEmtpyFlakeSubmition fr (Tagged d) = do
       lift $ do
         writeTQueue fr.fetcherQueue Nothing
         modifyTVar' fr.fetcherQueueLen (1 +)
+
+validateRawFlakeUrl :: RawFlakeUrl -> Maybe FlakeUrl
+validateRawFlakeUrl (RawFlakeUrl rfu) =
+  if rfu =~ ("^github:[a-zA-Z0-9._-]+[/][a-zA-Z0-9._-]+$" :: Text)
+  then pure $ FlakeUrl rfu
+  else Nothing

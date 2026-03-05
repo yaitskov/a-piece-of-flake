@@ -16,6 +16,13 @@ import PieceOfFlake.Flake
       MetaFlake(description, packages, rev),
       PackageInfo(broken, name, description, license, unfree) )
 import PieceOfFlake.Flake.Repo
+    ( FlakeRepo(flakes, flakeIndex, fetcherSecret),
+      FetcherReq(FetcherReq),
+      trySubmitFlakeToRepo,
+      popFlakeSubmition,
+      addFetchedFlake,
+      validateRawFlakeUrl )
+
 import PieceOfFlake.Index ( findFlakes )
 import PieceOfFlake.Prelude hiding (Map, error, pi)
 import PieceOfFlake.Th ( includeFile )
@@ -418,12 +425,15 @@ navBar = do
 
 postSubmitFlakeR :: Handler Flake
 postSubmitFlakeR = do
-  requireCheckJsonBody >>= \fu -> do
-    ip <- IpAdr . clientAdrToDec4 <$> getClientAdr
-    Ypp { repo } <- getYesod
-    trySubmitFlakeToRepo ip repo fu >>= \case
-      Left e -> internalError e
-      Right f -> pure f
+  requireCheckJsonBody >>= \rfu ->
+    case validateRawFlakeUrl rfu of
+      Nothing -> invalidArgs ["flake url formatting is wrong"]
+      Just fu -> do
+        ip <- IpAdr . clientAdrToDec4 <$> getClientAdr
+        Ypp { repo } <- getYesod
+        trySubmitFlakeToRepo ip repo fu >>= \case
+          Left e -> internalError e
+          Right f -> pure f
 
 postFetchNewFlakeSubmitionsR :: Handler (Maybe FlakeUrl)
 postFetchNewFlakeSubmitionsR = do
