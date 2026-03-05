@@ -1,8 +1,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 module PieceOfFlake.Fetcher where
-
-
 import Control.Monad.Catch ( Handler(Handler) )
 import Crypto.Hash.SHA1 (hashlazy)
 import Data.Aeson
@@ -19,16 +17,19 @@ import Data.Map.Strict qualified as M
 import Data.Text qualified as T
 import PieceOfFlake.CmdArgs ( RawNixCacheOutput )
 import PieceOfFlake.Req
-    ( MonadHttp,
-      DynamicUrl,
+    ( DynamicUrl,
+      MonadHttp,
       POST(POST),
       ReqBodyJson(ReqBodyJson),
+      HttpException(VanillaHttpException),
       defaultHttpConfig,
       jsonResponse,
       responseBody,
       runReq,
       dynReq,
-      HttpException(VanillaHttpException) )
+      isStatusCodeException,
+      responseStatusCode )
+
 import PieceOfFlake.Flake
     ( PackageInfo(..),
       PackageName(..),
@@ -37,10 +38,10 @@ import PieceOfFlake.Flake
       Architecture(..) )
 import PieceOfFlake.Prelude
 import System.Process ( readProcess )
-import UnliftIO ( MonadUnliftIO, catchAny, stringException, throwIO )
 import UnliftIO.Retry
     ( fibonacciBackoff, recovering, limitRetries )
 import UnliftIO.Directory
+    ( doesFileExist, createDirectoryIfMissing )
 import System.FilePath ( (</>) )
 
 showDigest :: ByteString -> String
@@ -242,12 +243,16 @@ runFetcher :: MonadUnliftIO m => DynamicUrl -> Tagged RawNixCacheOutput (Maybe F
 runFetcher serviceUrl rawNixCa = do
   ca <- nixCurrentArch
   recovering
-    (fibonacciBackoff 100_000 <> limitRetries 1111)
+    (fibonacciBackoff 100_000 <> limitRetries 3)
     [ \_rs -> Handler $
         \case
-          e@VanillaHttpException {} -> do
-            putStrLn $ "Retry after " <> show e
-            pure True
+          he@VanillaHttpException {} -> do
+            case isStatusCodeException he of
+              Nothing -> pure False
+              Just r ->
+                case responseStatusCode r of
+                  scode ->
+                    pure $ scode < 400 || scode >= 500
           _ -> pure False
     ]
     (\_ -> runReq defaultHttpConfig $

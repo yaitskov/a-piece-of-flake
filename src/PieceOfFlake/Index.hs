@@ -6,19 +6,23 @@ import Control.Monad.Logger ( logError, logInfo, MonadLogger )
 import Data.Aeson ( FromJSON )
 import Data.Map.Strict qualified as M
 import Data.SearchEngine
-    ( SearchEngine,
-      Term,
-      query,
-      initSearchEngine,
-      insertDoc,
-      FeatureFunction(LogarithmicFunction),
+    ( Term,
       SearchConfig(documentFeatureValue, SearchConfig, documentKey,
                    extractDocumentTerms, transformQueryTerm),
       SearchRankParameters(paramAutosuggestPostfilterLimit,
                            SearchRankParameters, paramK1, paramB, paramFieldWeights,
                            paramFeatureWeights, paramFeatureFunctions,
                            paramResultsetSoftLimit, paramResultsetHardLimit,
-                           paramAutosuggestPrefilterLimit) )
+                           paramAutosuggestPrefilterLimit),
+      SearchEngine,
+      FeatureFunction(LogarithmicFunction),
+      query,
+      initSearchEngine,
+      insertDoc,
+      queryAutosuggest,
+      ResultsFilter(NoFilter) )
+import ListT qualified as L
+import NLP.Tokenize.Text ( tokenize )
 import PieceOfFlake.Flake
     ( Flake(flakeUrl, FlakeIndexed, FlakeFetched, meta),
       FlakeUrl,
@@ -26,13 +30,13 @@ import PieceOfFlake.Flake
       PackageInfo(broken, description, license, name, unfree) )
 import PieceOfFlake.Prelude hiding (pi, Map)
 import PieceOfFlake.Stm ( readTQueue, TQueue, atomicalog )
-import StmContainers.Map ( Map, insert, lookup )
+import StmContainers.Map ( insert, listTNonAtomic, lookup, Map )
 
 type FlakeIndex = SearchEngine (FlakeUrl, MetaFlake) FlakeUrl () ()
 
 packageInfoToTerms :: PackageInfo -> [Term]
 packageInfoToTerms pi =
-  words pi.description <>
+  tokenize pi.description <>
   [ "license", pi.license
   , toText pi.name
   , if pi.unfree then "unfree" else "free"
@@ -41,7 +45,7 @@ packageInfoToTerms pi =
 
 extractTerms :: (FlakeUrl, MetaFlake) -> () -> [Term]
 extractTerms (fu, mf) () =
-  maybeToList mf.description <> [toText fu] <> (toText <$> M.keys mf.packages)
+  concatMap tokenize (maybeToList mf.description) <> [toText fu] <> (toText <$> M.keys mf.packages)
   <> (concatMap packageInfoToTerms .  concatMap M.elems $ M.elems mf.packages)
 
 emptyFlakeIndex :: FlakeIndex
@@ -113,9 +117,21 @@ data FlakeSearchReq
 
 instance FromJSON FlakeSearchReq
 
-findFlakes :: MonadIO m => TVar FlakeIndex -> FlakeSearchReq -> m [ FlakeUrl ]
-findFlakes fi FlakeSearchReq { searchPattern = ps } = atomicalog $ do
-  $(logInfo) $ "Search flakes by " <> show ps
-  r <- (`query` ps) <$> lift (readTVar fi)
-  $(logInfo) $ "Found " <> show (length r) <> " by " <> show ps
-  pure r
+alt :: [a] -> [a] -> [a]
+alt a b = case a of [] -> b ; o -> o
+
+findFlakes :: MonadIO m => Map FlakeUrl Flake -> TVar FlakeIndex -> FlakeSearchReq -> m [ FlakeUrl ]
+findFlakes fs tfi FlakeSearchReq { searchPattern = ps } =
+  case concatMap tokenize ps of
+    [] -> justLoadFirstNFlakes fs 30
+    pst@(t1:_) -> atomicalog (fromIdx t1 pst)
+  where
+    fromIdx t1 pst = do
+      fi <- lift $ readTVar tfi
+      $(logInfo) $ "Search flakes by " <> show pst
+      let r  = query fi pst `alt` (fmap fst . snd $ queryAutosuggest fi NoFilter [] t1)
+      $(logInfo) $ "Found " <> show (length r) <> " by " <> show ps
+      pure r
+
+justLoadFirstNFlakes :: MonadIO m => Map FlakeUrl Flake -> Int -> m [ FlakeUrl ]
+justLoadFirstNFlakes fs n = fmap fst <$> liftIO (L.toList $ L.take n (listTNonAtomic fs))

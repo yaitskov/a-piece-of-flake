@@ -5,4 +5,4 @@ import PieceOfFlake.CmdRun
 import PieceOfFlake.Prelude
 
 main :: IO ()
-main = execWithArgs runCmd
+main = execWithArgs runCmd =<< getArgs

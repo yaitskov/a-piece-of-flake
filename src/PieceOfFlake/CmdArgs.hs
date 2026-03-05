@@ -12,6 +12,7 @@ data CertKey
 data AcidFlakesPath
 data StaticCacheSeconds
 data RawNixCacheOutput
+data BaseUrl
 
 data CmdArgs
   = WebService
@@ -20,6 +21,7 @@ data CmdArgs
     , keyFile :: Maybe (Tagged CertKey FilePath)
     , acidFlakes :: Tagged AcidFlakesPath FilePath
     , staticCache :: Tagged StaticCacheSeconds Word32
+    , baseUrl :: Tagged BaseUrl Text
     }
   | FetcherJob
     { webServiceUrl :: DynamicUrl
@@ -28,10 +30,10 @@ data CmdArgs
   | PieceOfFlakeVersion
   deriving Show
 
-execWithArgs :: MonadIO m => (CmdArgs -> m a) -> m a
-execWithArgs a = a =<< liftIO (execParser $ info (cmdp <**> helper) phelp)
+execWithArgs :: MonadIO m => (CmdArgs -> m a) -> [String] -> m a
+execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPrefs (info (cmdp <**> helper) phelp) args)
   where
-    serviceP = WebService <$> portOption <*> certO <*> certKeyO <*> acidOption <*> cacheSecondsO
+    serviceP = WebService <$> portOption <*> certO <*> certKeyO <*> acidOption <*> cacheSecondsO <*> baseUrlO
     fetcherP = FetcherJob <$> urlOption <*> rawNixCacheO
     cmdp =
       hsubparser
@@ -84,6 +86,17 @@ acidOption = Tagged <$>
     <> value  "acid-flakes/"
     <> help "path do ACID flake store"
     <> metavar "ACID"
+  )
+
+baseUrlO :: Parser (Tagged BaseUrl Text)
+baseUrlO = Tagged <$>
+  option str
+  ( long "base-url"
+    <> short 'u'
+    <> showDefault
+    <> value ("http://localhost:" <> show defaultPort)
+    <> help "base web service url for HTML links"
+    <> metavar "URL"
   )
 
 urlOption :: Parser DynamicUrl

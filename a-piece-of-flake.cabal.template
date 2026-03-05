@@ -20,6 +20,7 @@ extra-source-files:
     assets/github.svg
     assets/app.js
     assets/style.css
+    assets/bulma.min.css
     assets/robots.txt
     assets/flush.mp3
     assets/snow.mp3
@@ -80,6 +81,7 @@ library
     , aeson                   < 3
     , aeson-pretty            < 1
     , binary                  < 1
+    , blaze-markup            < 1
     , bytestring              < 1
     , cryptohash-sha1         < 1
     , either                  < 6
@@ -89,6 +91,7 @@ library
     , full-text-search        < 1
     , hnix                    < 1
     , http-types              < 1
+    , list-t                  < 2
     , monad-logger            < 1
     , memory                  < 1
     , network                 < 4
@@ -107,6 +110,7 @@ library
     , template-haskell        < 3
     , text-zipper             < 1
     , time                    < 2
+    , tokenize                < 1
     , trace-embrace           >= 1.3 && < 2
     , wai                     < 4
     , warp                    < 4

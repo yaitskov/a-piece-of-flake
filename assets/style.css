@@ -1,45 +1,57 @@
 /* A Piece of Flake */
-body {
-    background: #7CED53;
-    background: radial-gradient(circle, rgb(182 213 217) 0%, rgb(205 255 253) 80%, rgb(206 214 255) 100%);
-    padding: 0px 4%;
-    color: #171717;
+
+@property --navy-logo-color {
+    syntax: "<color>";
+    inherits: false;
+    initial-value: #5277c3;
 }
+
+@property --blue-logo-color {
+    syntax: "<color>";
+    inherits: false;
+    initial-value: #7ebae4;
+}
+
+.navbar-brand .navbar-time a {
+    color: var(--navy-logo-color);
+}
+
+button.is-black {
+    font-weight: bold;
+}
+
+body {
+    background: radial-gradient(circle, var(--blue-logo-color) 0%, var(--blue-logo-color) 80%, var(--navy-logo-color) 100%);
+    color: #171717;
+    min-height: 100vh;
+}
+
+body .table {
+    background: transparent;
+}
+
+body .table.is-bordered td {
+    border-width: 2px;
+}
+
+body .table td {
+    border-color: hsl(221.1, 17.8%, 61.4%);
+}
+
+.input.is-success {
+    border-width: 4px !important;
+    box-shadow: 20px 10px 20px green !important;
+    background-color: var(--bulma-success-25-invert);
+}
+
+.input.is-danger {
+    border-width: 4px !important;
+    box-shadow: 10px 5px 5px var(--bulma-danger) !important;
+    background-color: var(--bulma-danger-25-invert);
+}
+
 img.github {
     width: 8vh;
     opacity: 0.8;
     padding-top: 5vh;
-}
-h1 a {
-    font-size: x-large;
-    text-decoration: none;
-    color: #e64d4d;
-
-    padding-left: 1.2lh;
-    background-size: auto 100%;
-    background-image: url(/favicon.svg);
-    background-repeat: no-repeat;
-}
-pre {
-    font-size: small;
-}
-.wrap {
-    white-space: pre-wrap;
-    text-indent: -2em;
-    padding-left: 2em;
-}
-
-#submition-form .SubmittedFlake,
-#submition-form .FlakeIsBeingFetched,
-#submition-form .BadFlake,
-#submition-form .FlakeFetched,
-#submition-form .FlakeIndexed {
-    display: none;
-}
-#submition-form.SubmittedFlake .SubmittedFlake,
-#submition-form.FlakeIsBeingFetched .FlakeIsBeingFetched,
-#submition-form.BadFlake .BadFlake,
-#submition-form.FlakeFetched .FlakeFetched,
-#submition-form.FlakeIndexed .FlakeIndexed {
-    display: inherit;
 }

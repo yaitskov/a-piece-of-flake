@@ -1,3 +1,5 @@
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TypeFamilies #-}
 module PieceOfFlake.Yesod where
 
 import Data.Binary.Builder (fromByteString)
@@ -7,10 +9,11 @@ import Network.HTTP.Types qualified as H
 import Network.Socket (SockAddr(SockAddrInet), hostAddressToTuple, tupleToHostAddress, HostAddress)
 import Network.Wai ( Request(remoteHost) )
 import PieceOfFlake.Prelude
+import Text.Blaze
 import Text.Show qualified as TS
 import Text.Regex.TDFA ( AllTextSubmatches(getAllTextSubmatches), (=~) )
-import UnliftIO.Exception ( stringException, throwIO )
-import Yesod.Core -- ( HandlerFor, waiRequest, sendResponseStatus )
+import Yesod.Core
+
 
 newtype HostIp = HostIp HostAddress deriving newtype (Eq, Ord)
 instance Show HostIp where
@@ -81,13 +84,30 @@ instance ToContent FavIcon where
 instance ToTypedContent FavIcon where
   toTypedContent = TypedContent typeSvg . toContent
 
--- instance ToContent a => ToContent (Maybe a) where
---   toContent = \case
---     Just a -> toContent a
---     Nothing -> toContent ""
-
--- instance ToTypedContent a => ToTypedContent (Maybe a) where
---   toTypedContent = TypedContent typeJson . toContent
 
 mp3Mime :: ByteString
 mp3Mime = "audio/mpeg"
+
+bulmaLayout :: Yesod site => WidgetFor site () -> HandlerFor site Html
+bulmaLayout w = do
+  p <- widgetToPageContent w
+  msgs <- getMessages
+  withUrlRenderer
+    [hamlet|
+      $newline never
+      $doctype 5
+      <html>
+          <head>
+              <title>#{pageTitle p}
+              $maybe description <- pageDescription p
+                <meta name="description" content="#{description}">
+              ^{pageHead p}
+          <body>
+              $forall (status, msg) <- msgs
+                  <p class="message #{status}">#{msg}
+              ^{pageBody p}
+      |]
+
+newtype Ts = Ts { unTs :: UTCTime } deriving newtype (Show, Eq, Ord)
+instance ToMarkup Ts where
+  toMarkup = toMarkup . show @Text . unTs

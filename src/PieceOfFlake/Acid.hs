@@ -12,9 +12,8 @@ import Data.Acid
 import PieceOfFlake.CmdArgs
 import Data.SafeCopy ( deriveSafeCopy, base )
 import PieceOfFlake.Flake ( FlakeUrl, Flake )
-import PieceOfFlake.Prelude hiding (atomically)
+import PieceOfFlake.Prelude
 import PieceOfFlake.Stm ( TQueue, readTQueue, peekTQueue )
-import UnliftIO ( MonadUnliftIO, finally, atomically )
 import UnliftIO.Retry
     ( fibonacciBackoff, limitRetries, recoverAll )
 

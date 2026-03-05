@@ -6,7 +6,12 @@ import Data.Version (showVersion)
 import Language.Haskell.TH.Syntax (qLocation)
 import PieceOfFlake.Acid
     ( loadFromDb, openFlakeDb, runPersistQueue )
-import PieceOfFlake.CmdArgs ( CmdArgs(..), CertKey, Cert )
+import PieceOfFlake.CmdArgs
+    ( CmdArgs(keyFile, WebService, FetcherJob, PieceOfFlakeVersion,
+              httpPortToListen, acidFlakes, staticCache, baseUrl, certFile),
+      Cert,
+      CertKey,
+      AcidFlakesPath )
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
     ( FlakeRepo(indexerQueueLen, flakeIndex, flakes, acidFlakes,
@@ -72,38 +77,48 @@ mkTlsSettings cert key = tlsSettings (untag cert) (untag key)
 runPlain :: Settings -> Application -> IO ()
 runPlain = runSettings
 
+initRepo :: MonadIO m => Tagged AcidFlakesPath FilePath -> m FlakeRepo
+initRepo acidFlakes = do
+  flakesMap <- liftIO newIO
+  fi <- newTVarIO emptyFlakeIndex
+  acidFlakeStorage <- openFlakeDb acidFlakes
+  loadIndexFromScratch fi flakesMap . reverse =<< loadFromDb acidFlakeStorage
+  mkFlakeRepo fi flakesMap acidFlakeStorage
+
+launchBackgroundThreads :: MonadUnliftIO m => FlakeRepo -> m ()
+launchBackgroundThreads fr = do
+  persisFlakeTid <- forkFinally
+    (forever $ do
+      recoverAll
+        (fibonacciBackoff 10000)
+        (\_ -> runPersistQueue fr.acidFlakes fr.acidQueue))
+    (\case
+        Left e -> putStrLn $ "Flake Persistence thread ended: " <> show e
+        Right () -> putStrLn "Flake Persistence thread ended without errors")
+  putStrLn $ "Flake persistence thread is forked " <> show persisFlakeTid
+  idxFlakeTid <- forkFinally
+    (forever $ consumeIndexQueue fr.flakes fr.indexerQueue fr.indexerQueueLen fr.flakeIndex)
+    (\case
+        Left e -> putStrLn $ "Flake text search indexer thread ended: " <> show e
+        Right () -> putStrLn "Flake text search indexer thread without errors")
+  putStrLn $ "Flake text search indexer thread is forked " <> show idxFlakeTid
+  efsTid <- forkFinally (sendEmtpyFlakeSubmition fr 30_000_000)
+    (\case
+        Left e -> putStrLn $ "Empty Submition Thead ended: " <> show e
+        Right () -> putStrLn "Empty Submition Thead ended without errors")
+  putStrLn $ "Empty Submition thread is forked " <> show efsTid
+
+-- $> import PieceOfFlake.CmdArgs
+-- $> execWithArgs runCmd ["web"]
 runCmd :: CmdArgs -> IO ()
 runCmd = \case
   ws@WebService {} -> do
     $(trIo "start/ws")
-    flakesMap <- liftIO newIO
-    fi <- newTVarIO emptyFlakeIndex
-    acidFlakeStorage <- openFlakeDb ws.acidFlakes
-    loadIndexFromScratch fi flakesMap . reverse =<< loadFromDb acidFlakeStorage
+    fr <- initRepo ws.acidFlakes
+    launchBackgroundThreads fr
 
-    fr <- mkFlakeRepo fi flakesMap acidFlakeStorage
+    let y = Ypp fr ws.staticCache ws.baseUrl
 
-    persisFlakeTid <- forkFinally
-      (forever $ do
-        recoverAll
-          (fibonacciBackoff 10000)
-          (\_ -> runPersistQueue fr.acidFlakes fr.acidQueue))
-      (\case
-          Left e -> putStrLn $ "Flake Persistence thread ended: " <> show e
-          Right () -> putStrLn "Flake Persistence thread ended without errors")
-    putStrLn $ "Flake persistence thread is forked " <> show persisFlakeTid
-    idxFlakeTid <- forkFinally
-      (forever $ consumeIndexQueue fr.flakes fr.indexerQueue fr.indexerQueueLen fr.flakeIndex)
-      (\case
-          Left e -> putStrLn $ "Flake text search indexer thread ended: " <> show e
-          Right () -> putStrLn "Flake text search indexer thread without errors")
-    putStrLn $ "Flake text search indexer thread is forked " <> show idxFlakeTid
-    efsTid <- forkFinally (sendEmtpyFlakeSubmition fr 30_000_000)
-      (\case
-          Left e -> putStrLn $ "Empty Submition Thead ended: " <> show e
-          Right () -> putStrLn "Empty Submition Thead ended without errors")
-    putStrLn $ "Empty Submition thread is forked " <> show efsTid
-    let y = Ypp fr ws.staticCache
     logger <- makeLogger y
     case liftA2 mkTlsSettings ws.certFile ws.keyFile of
       Nothing -> runPlain (mkSettings y ws logger) =<< toWaiApp y

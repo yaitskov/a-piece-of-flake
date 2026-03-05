@@ -5,17 +5,19 @@ import Data.Aeson ( FromJSONKey, ToJSONKey, encode )
 import Data.Map.Strict qualified as M
 import Data.SafeCopy ( deriveSafeCopy, base )
 import PieceOfFlake.Prelude hiding (Map)
+import Text.Blaze ( ToMarkup )
 import Yesod.Core
     ( FromJSON,
       ToJSON,
       typeJson,
       ToContent(..),
       ToTypedContent(..),
-      TypedContent(TypedContent) )
+      TypedContent(TypedContent), PathPiece )
 
 
 newtype FlakeUrl = FlakeUrl Text
-  deriving newtype (Show, Eq, Ord, ToJSON, FromJSON, Hashable, ToContent, ToTypedContent, IsString, ToText)
+  deriving newtype (Show, Read, Eq, Ord, ToMarkup, ToJSON, FromJSON,
+                    Hashable, ToContent, ToTypedContent, IsString, ToText, PathPiece)
 
 deriveSafeCopy 1 'base ''FlakeUrl
 
@@ -32,14 +34,14 @@ newtype Architecture = Architecture Text
   deriving newtype
   ( Show, Eq, Ord, Hashable
   , ToJSON, FromJSON, ToJSONKey, FromJSONKey
-  , IsString, ToText
+  , IsString, ToText, ToMarkup
   )
 deriveSafeCopy 1 'base ''Architecture
 newtype PackageName = PackageName Text
   deriving newtype
   ( Show, Eq, Ord, Hashable
   , ToJSON, FromJSON, ToJSONKey, FromJSONKey
-  , IsString, ToText
+  , IsString, ToText, ToMarkup
   )
 deriveSafeCopy 1 'base ''PackageName
 data PackageInfo
@@ -67,9 +69,9 @@ deriveSafeCopy 1 'base ''MetaFlake
 instance ToJSON MetaFlake
 instance FromJSON MetaFlake
 
-newtype IpAdr = IpAdr Text  deriving newtype (Show, Eq, Ord, ToJSON, FromJSON)
+newtype IpAdr = IpAdr Text  deriving newtype (Show, Eq, Ord, ToJSON, FromJSON, ToMarkup)
 deriveSafeCopy 1 'base ''IpAdr
-newtype FetcherId = FetcherId Text deriving newtype (Show, Eq, Ord, ToJSON, FromJSON)
+newtype FetcherId = FetcherId Text deriving newtype (Show, Eq, Ord, ToJSON, FromJSON, ToMarkup)
 deriveSafeCopy 1 'base ''FetcherId
 
 data Flake
