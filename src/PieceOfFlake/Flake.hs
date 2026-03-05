@@ -71,7 +71,7 @@ instance FromJSON MetaFlake
 
 newtype IpAdr = IpAdr Text  deriving newtype (Show, Eq, Ord, ToJSON, FromJSON, ToMarkup)
 deriveSafeCopy 1 'base ''IpAdr
-newtype FetcherId = FetcherId Text deriving newtype (Show, Eq, Ord, ToJSON, FromJSON, ToMarkup)
+newtype FetcherId = FetcherId Text deriving newtype (Show, Eq, Ord, ToJSON, FromJSON, ToMarkup, Read)
 deriveSafeCopy 1 'base ''FetcherId
 
 data Flake

@@ -3,6 +3,7 @@
 module PieceOfFlake.Flake.Repo where
 
 import Data.Acid ( AcidState )
+import Data.Aeson ( FromJSON, ToJSON )
 import Control.Concurrent (threadDelay)
 import Control.Monad.Logger ( logError, logInfo, WriterLoggingT )
 import PieceOfFlake.Acid ( AcidFlakes )
@@ -63,14 +64,17 @@ trySubmitFlakeToRepo ip fr fu = do
       Just f ->
         pure $ Right f
 
-
-popFlakeSubmition :: MonadIO m => FlakeRepo -> m (Maybe FlakeUrl)
-popFlakeSubmition fr = do
+popFlakeSubmition :: MonadIO m => FlakeRepo -> FetcherId -> m (Maybe FlakeUrl)
+popFlakeSubmition fr ftid = do
   now <- liftIO getCurrentTime
-  atomicalog (popFlakeSubmitionStm fr now)
+  atomicalog (popFlakeSubmitionStm ftid fr now)
 
-popFlakeSubmitionStm  :: FlakeRepo -> UTCTime -> WriterLoggingT STM (Maybe FlakeUrl)
-popFlakeSubmitionStm fr now = do
+popFlakeSubmitionStm  ::
+  FetcherId ->
+  FlakeRepo ->
+  UTCTime ->
+  WriterLoggingT STM (Maybe FlakeUrl)
+popFlakeSubmitionStm ftid fr now = do
   fSub <- lift $ readTQueue fr.fetcherQueue
   lift $ modifyTVar' fr.fetcherQueueLen (\x -> x - 1)
   fql <- lift $ readTVar fr.fetcherQueueLen
@@ -81,22 +85,34 @@ popFlakeSubmitionStm fr now = do
       lift (lookup fu fr.flakes) >>= \case
         Just (SubmittedFlake { flakeUrl })
           | flakeUrl == fu -> do
-            lift $ insert (FlakeIsBeingFetched flakeUrl now $ FetcherId "fid") fu fr.flakes
+            lift $ insert (FlakeIsBeingFetched flakeUrl now ftid) fu fr.flakes
             pure $ Just flakeUrl
           | otherwise -> do
             $(logError) $ "Error flake url mismatch " <> show fu <> " <> " <> show flakeUrl
-            popFlakeSubmitionStm fr now
+            popFlakeSubmitionStm ftid fr now
         Just ufs -> do
           $(logError) $ "Expected SumbittedFlake state but:" <> show ufs
-          popFlakeSubmitionStm fr now
+          popFlakeSubmitionStm ftid fr now
         Nothing -> do
           $(logError) $ "Error flake " <> show fu <> " is missing in map"
-          popFlakeSubmitionStm fr now
+          popFlakeSubmitionStm ftid fr now
 
+data FetcherReq
+  = FetcherReq
+  { fetcherId :: FetcherId
+  , fetcherResponse :: Maybe (FlakeUrl, Either Text MetaFlake)
+  } deriving (Show, Eq, Generic)
 
--- | Store meta data for flake and return next flake submition
-addFetchedFlake :: MonadIO m => FlakeRepo -> (FlakeUrl, Either Text MetaFlake) -> m (Maybe FlakeUrl)
-addFetchedFlake fr (fu, fetchedFlake) = do
+instance FromJSON FetcherReq
+instance ToJSON FetcherReq
+
+-- | Store meta data for flake and ask for next flake submition
+addFetchedFlake :: MonadIO m =>
+  FlakeRepo ->
+  FetcherId ->
+  (FlakeUrl, Either Text MetaFlake) ->
+  m (Maybe FlakeUrl)
+addFetchedFlake fr ftid (fu, fetchedFlake) = do
   now <- liftIO getCurrentTime
   atomicalog $ go now
   where
@@ -108,7 +124,7 @@ addFetchedFlake fr (fu, fetchedFlake) = do
               Left e -> do
                 lift $ insert (BadFlake fu now e) fu fr.flakes
                 $(logInfo) $ "Fetching flake " <> show fu <> " failed in " <> show (duration now past)
-                popFlakeSubmitionStm fr now
+                popFlakeSubmitionStm ftid fr now
               Right meta -> do
                 let f = FlakeFetched fu now meta
                 lift $ insert f fu fr.flakes
@@ -118,7 +134,7 @@ addFetchedFlake fr (fu, fetchedFlake) = do
                 lift $ modifyTVar' fr.indexerQueueLen (1 +)
                 iql <- lift $ readTVar fr.indexerQueueLen
                 $(logInfo) $ "Indexer queue increased to " <> show iql
-                popFlakeSubmitionStm fr now
+                popFlakeSubmitionStm ftid fr now
           | otherwise -> do
               $(logError) $ "Error flake url mismatch " <> show fu <> " <> " <> show exFu
               pure Nothing

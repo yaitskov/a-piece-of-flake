@@ -3,6 +3,7 @@ module PieceOfFlake.CmdArgs where
 import Data.Either.Combinators ( mapLeft )
 import Network.HostName ( getHostName )
 import Options.Applicative
+import PieceOfFlake.Flake
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req
     ( DynamicUrl(UrlHttp), http, port, parseUrl )
@@ -14,7 +15,6 @@ data AcidFlakesPath
 data StaticCacheSeconds
 data RawNixCacheOutput
 data BaseUrl
-newtype FetcherId = FetcherId Text deriving newtype (Show, Eq, Ord, IsString, Read)
 
 data CmdArgs
   = WebService

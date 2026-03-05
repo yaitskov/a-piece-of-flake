@@ -15,7 +15,15 @@ import Data.ByteString.Char8 qualified as BS8
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as M
 import Data.Text qualified as T
-import PieceOfFlake.CmdArgs ( RawNixCacheOutput, FetcherId )
+import PieceOfFlake.CmdArgs ( RawNixCacheOutput )
+import PieceOfFlake.Flake
+    ( FlakeUrl(..),
+      Architecture(..),
+      PackageName(..),
+      PackageInfo(..),
+      MetaFlake(..),
+      FetcherId )
+import PieceOfFlake.Prelude
 import PieceOfFlake.Req
     ( DynamicUrl,
       MonadHttp,
@@ -30,13 +38,7 @@ import PieceOfFlake.Req
       isStatusCodeException,
       responseStatusCode )
 
-import PieceOfFlake.Flake
-    ( PackageInfo(..),
-      PackageName(..),
-      FlakeUrl(..),
-      MetaFlake(..),
-      Architecture(..) )
-import PieceOfFlake.Prelude
+
 import System.Process ( readProcess )
 import UnliftIO.Retry
     ( fibonacciBackoff, recovering, limitRetries )
@@ -224,6 +226,7 @@ metaFlakeFromUrl fu = do
     mapArchPkgs (arch, pkgNames) =
           (arch, ) . M.fromList <$> mapM (\pkgName -> (pkgName,) <$> getPackageInfo arch pkgName)
             (filter (/= PackageName "default") pkgNames)
+
 
 uploadFlakeAndFetch :: (FetcherM m, MonadHttp m) =>
   Maybe (FlakeUrl, Either Text MetaFlake)

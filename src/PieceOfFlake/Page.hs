@@ -17,10 +17,6 @@ import PieceOfFlake.Flake
       PackageInfo(broken, name, description, license, unfree) )
 import PieceOfFlake.Index ( findFlakes )
 import PieceOfFlake.Flake.Repo
-    ( FlakeRepo(flakeIndex, flakes),
-      trySubmitFlakeToRepo,
-      popFlakeSubmition,
-      addFetchedFlake )
 import PieceOfFlake.Prelude hiding (Map, error, pi)
 import PieceOfFlake.Yesod
     ( Ts(Ts),
@@ -434,13 +430,13 @@ postFetchNewFlakeSubmitionsR :: Handler (Maybe FlakeUrl)
 postFetchNewFlakeSubmitionsR = do
   Ypp { repo } <- getYesod
   requireCheckJsonBody >>= \case
-    Nothing -> do
+    FetcherReq fetcherId Nothing -> do
       putStrLn "Just Fetch nex FlakeUrl"
-      r <- popFlakeSubmition repo
+      r <- popFlakeSubmition repo fetcherId
       putBSLn $ toStrict $ encode r <> " :: Maybe Flake  <-> "  <> show r
       pure r
-    Just fetchedFlake -> addFetchedFlake repo fetchedFlake
-
+    FetcherReq fetcherId (Just fetchedFlake) ->
+      addFetchedFlake repo fetcherId fetchedFlake
 
 postFindFlakesR :: Handler [ FlakeUrl ]
 postFindFlakesR = do
