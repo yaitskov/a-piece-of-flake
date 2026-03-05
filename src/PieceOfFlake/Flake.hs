@@ -110,3 +110,7 @@ instance ToContent Flake where
   toContent = toContent . encode
 instance ToTypedContent Flake where
   toTypedContent = TypedContent typeJson . toContent
+
+isIndexed :: Flake -> Bool
+isIndexed FlakeIndexed {} = True
+isIndexed _ = False

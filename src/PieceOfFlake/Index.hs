@@ -25,7 +25,7 @@ import ListT qualified as L
 import NLP.Tokenize.Text ( tokenize )
 import PieceOfFlake.Flake
     ( Flake(flakeUrl, FlakeIndexed, FlakeFetched, meta),
-      FlakeUrl,
+      FlakeUrl, isIndexed,
       MetaFlake(packages, description),
       PackageInfo(broken, description, license, name, unfree) )
 import PieceOfFlake.Prelude hiding (pi, Map)
@@ -134,4 +134,5 @@ findFlakes fs tfi FlakeSearchReq { searchPattern = ps } =
       pure r
 
 justLoadFirstNFlakes :: MonadIO m => Map FlakeUrl Flake -> Int -> m [ FlakeUrl ]
-justLoadFirstNFlakes fs n = fmap fst <$> liftIO (L.toList $ L.take n (listTNonAtomic fs))
+justLoadFirstNFlakes fs n =
+  fmap fst . filter (isIndexed . snd) <$> liftIO (L.toList $ L.take (2 * n) (listTNonAtomic fs))
