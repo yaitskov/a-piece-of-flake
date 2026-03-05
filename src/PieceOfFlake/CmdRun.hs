@@ -7,12 +7,6 @@ import Language.Haskell.TH.Syntax (qLocation)
 import PieceOfFlake.Acid
     ( loadFromDb, openFlakeDb, runPersistQueue )
 import PieceOfFlake.CmdArgs
-    ( CmdArgs(keyFile, WebService, FetcherJob, PieceOfFlakeVersion, fetcherSecretPath,
-              httpPortToListen, acidFlakes, staticCache, baseUrl, certFile),
-      Cert,
-      FetcherSecret (..),
-      CertKey,
-      AcidFlakesPath )
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
     ( FlakeRepo(indexerQueueLen, flakeIndex, flakes, acidFlakes,
@@ -47,16 +41,16 @@ import UnliftIO.Concurrent ( forkFinally )
 import UnliftIO.Retry ( fibonacciBackoff, recoverAll )
 import Yesod.Core.Types ( Logger )
 
-mkSettings :: Ypp -> CmdArgs -> Logger -> Settings
+mkSettings :: Ypp -> WsCmdArgs -> Logger -> Settings
 mkSettings yp ca logger =
   setPort port $
   setServerName "PieceOfFlake" $
   setOnException onEx $
   setSlowlorisSize 1024 $
   setMaxTotalHeaderLength 1024 $
-  setBeforeMainLoop
-  (putStrLn $ "Go http://localhost:" <> show port <> "/") $
-  setTimeout 9
+  setBeforeMainLoop  (putTextLn $ "Go " <> untag ca.baseUrl) $
+  -- expected that Nginx restricts keepalive for non fetcher connections
+  setTimeout (2 * fromIntegral (untag ca.noSubmitionHeartbeat))
   defaultSettings
 
   where
@@ -109,11 +103,12 @@ launchBackgroundThreads fr = do
         Right () -> putStrLn "Empty Submition Thead ended without errors")
   putStrLn $ "Empty Submition thread is forked " <> show efsTid
 
+-- commented lines below are excuted via: @ghciwatch --enable-eval@
 -- $> import PieceOfFlake.CmdArgs
 -- $> execWithArgs runCmd ["web"]
 runCmd :: CmdArgs -> IO ()
 runCmd = \case
-  ws@WebService {} -> do
+  WebService ws -> do
     $(trIo "start/ws")
     fr <- (`initRepo` ws.acidFlakes) =<< loadFetcherSecret ws.fetcherSecretPath
     launchBackgroundThreads fr
@@ -124,7 +119,7 @@ runCmd = \case
     case liftA2 mkTlsSettings ws.certFile ws.keyFile of
       Nothing -> runPlain (mkSettings y ws logger) =<< toWaiApp y
       Just tlsSngs -> runTLS tlsSngs (mkSettings y ws logger) =<< toWaiApp y
-  FetcherJob serUrl rawNixCache fid fSecPath ->
+  FetcherJob (FetcherCmdArgs serUrl rawNixCache fid fSecPath) ->
     runFetcher serUrl rawNixCache fid =<< loadFetcherSecret fSecPath
   PieceOfFlakeVersion ->
     putStrLn $ "Version " <> showVersion version

@@ -1,3 +1,4 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 module PieceOfFlake.CmdArgs where
 
 import Data.Aeson ( FromJSON, ToJSON )
@@ -18,13 +19,13 @@ data AcidFlakesPath
 data StaticCacheSeconds
 data RawNixCacheOutput
 data BaseUrl
-
+data NoSubmitionHeartbeatSec
 newtype FetcherSecret = FetcherSecret Text deriving (Eq, Generic, FromJSON, ToJSON)
 instance Show FetcherSecret where
   show _ = "****"
 
-data CmdArgs
-  = WebService
+data WsCmdArgs
+  = WsCmdArgs
     { httpPortToListen :: Tagged HttpPort Int
     , certFile :: Maybe (Tagged Cert FilePath)
     , keyFile :: Maybe (Tagged CertKey FilePath)
@@ -32,24 +33,33 @@ data CmdArgs
     , staticCache :: Tagged StaticCacheSeconds Word32
     , baseUrl :: Tagged BaseUrl Text
     , fetcherSecretPath :: Tagged FetcherSecret FilePath
+    , noSubmitionHeartbeat :: Tagged NoSubmitionHeartbeatSec Word32
     }
-  | FetcherJob
+  deriving Show
+
+data FetcherCmdArgs
+  = FetcherCmdArgs
     { webServiceUrl :: DynamicUrl
     , rawNixCache :: Tagged RawNixCacheOutput (Maybe FilePath)
     , fetcherId :: FetcherId
     , fetcherSecretPath :: Tagged FetcherSecret FilePath
     }
+  deriving Show
+
+data CmdArgs
+  = WebService WsCmdArgs
+  | FetcherJob FetcherCmdArgs
   | PieceOfFlakeVersion
   deriving Show
 
 execWithArgs :: MonadIO m => (CmdArgs -> m a) -> [String] -> m a
 execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPrefs (info (cmdp <**> helper) phelp) args)
   where
-    serviceP = WebService <$> portOption <*> certO <*>
+    serviceP = WebService <$> (WsCmdArgs <$> portOption <*> certO <*>
       certKeyO <*> acidOption <*> cacheSecondsO <*>
-      baseUrlO <*> fetcherSecretPathO
-    fetcherP = FetcherJob <$> urlOption <*> rawNixCacheO <*>
-      customFetcherIdO <*> fetcherSecretPathO
+      baseUrlO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO)
+    fetcherP = FetcherJob <$> (FetcherCmdArgs <$> urlOption <*> rawNixCacheO <*>
+      customFetcherIdO <*> fetcherSecretPathO)
     cmdp =
       hsubparser
         (  command "web" (infoP serviceP "launch web service")
@@ -63,6 +73,17 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
 
 defaultPort :: Int
 defaultPort = 3003
+
+noSubmitionHeartbeatO :: Parser (Tagged NoSubmitionHeartbeatSec Word32)
+noSubmitionHeartbeatO = Tagged <$>
+  option auto
+  ( long "heartbeat"
+    <> short 'b'
+    <> showDefault
+    <> value 600
+    <> help "period for putting empty submition request into fetcher queue (in seconds) when queue is empty"
+    <> metavar "HEARTBEAT"
+  )
 
 cacheSecondsO :: Parser (Tagged StaticCacheSeconds Word32)
 cacheSecondsO = Tagged <$>
