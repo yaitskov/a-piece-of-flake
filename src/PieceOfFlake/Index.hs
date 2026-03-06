@@ -2,7 +2,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 module PieceOfFlake.Index where
 
-import Data.Aeson ( FromJSON )
 import Data.Map.Strict qualified as M
 import Data.SearchEngine
     ( Term,
@@ -73,7 +72,7 @@ emptyFlakeIndex =
     , paramAutosuggestPostfilterLimit = 10
     }
 
-consumeIndexQueue :: MonadIO m => Map FlakeUrl Flake -> TQueue FlakeUrl -> TVar Int -> TVar FlakeIndex -> m ()
+consumeIndexQueue :: PoF m => Map FlakeUrl Flake -> TQueue FlakeUrl -> TVar Int -> TVar FlakeIndex -> m ()
 consumeIndexQueue fs q qlen fi = do
   now <- liftIO getCurrentTime
   atomicalog $ do
@@ -101,7 +100,7 @@ indexFlake now fi fs f =
    _nff -> $(logError) $ "Flake " <> show f.flakeUrl <> " is not in the fetched state"
 
 loadIndexFromScratch ::
-  (MonadIO m) => TVar FlakeIndex -> Map FlakeUrl Flake -> [(FlakeUrl, Flake)] -> m ()
+  PoF m => TVar FlakeIndex -> Map FlakeUrl Flake -> [(FlakeUrl, Flake)] -> m ()
 loadIndexFromScratch fi fsm fs = do
   now <- liftIO getCurrentTime
   atomicalog $ do
@@ -124,7 +123,8 @@ instance FromJSON FlakeSearchReq
 alt :: [a] -> [a] -> [a]
 alt a b = case a of [] -> b ; o -> o
 
-findFlakes :: MonadIO m => Map FlakeUrl Flake -> TVar FlakeIndex -> FlakeSearchReq -> m [ FlakeUrl ]
+findFlakes :: PoF m =>
+  Map FlakeUrl Flake -> TVar FlakeIndex -> FlakeSearchReq -> m [ FlakeUrl ]
 findFlakes fs tfi FlakeSearchReq { searchPattern = ps } =
   case concatMap tokenize ps of
     [] -> justLoadFirstNFlakes fs 30

@@ -8,7 +8,8 @@ module PieceOfFlake.Page where
 
 import Data.Aeson ( encode )
 import Data.Map.Strict (elems)
-import PieceOfFlake.CmdArgs ( StaticCacheSeconds, BaseUrl, FetcherSecret )
+import PieceOfFlake.CmdArgs
+    ( WsCmdArgs(logLevel), FetcherSecret, BaseUrl, StaticCacheSeconds )
 import PieceOfFlake.Flake
     ( FlakeUrl,
       Flake(..),
@@ -16,7 +17,7 @@ import PieceOfFlake.Flake
       MetaFlake(description, packages, rev),
       PackageInfo(broken, name, description, license, unfree) )
 import PieceOfFlake.Flake.Repo
-    ( FlakeRepo(flakes, flakeIndex, fetcherSecret),
+    ( FlakeRepo(flakes, flakeIndex, fetcherSecret, wsArgs),
       FetcherReq(FetcherReq),
       trySubmitFlakeToRepo,
       popFlakeSubmition,
@@ -66,6 +67,15 @@ mkYesod "Ypp" [parseRoutes|
 
 instance Yesod Ypp where
   makeSessionBackend _ = pure Nothing
+  maximumContentLength _ = pure . \case
+    Nothing -> 1
+    Just HomeR -> 1
+    Just SubmitFlakeR -> 200
+    Just FetchNewFlakeSubmitionsR -> 100000
+    Just _ -> 500
+
+  shouldLogIO (Ypp {repo}) _ l =
+    pure $ l >= repo.wsArgs.logLevel
 
 setCacheHeaderForStatic :: Handler ()
 setCacheHeaderForStatic = do
@@ -439,7 +449,7 @@ postFetchNewFlakeSubmitionsR = do
   Ypp { repo } <- getYesod
   requireCheckJsonBody >>= \case
     FetcherReq fetcherId Nothing fsec -> verifyFetcher fsec $ do
-      putStrLn "Just Fetch nex FlakeUrl"
+      $(logDebug) "Just Fetch next FlakeUrl"
       r <- popFlakeSubmition repo fetcherId
       putBSLn $ toStrict $ encode r <> " :: Maybe Flake  <-> "  <> show r
       pure r

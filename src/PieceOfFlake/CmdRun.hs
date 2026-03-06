@@ -8,12 +8,14 @@ import PieceOfFlake.Acid
 import PieceOfFlake.CmdArgs
     ( CmdArgs(..),
       FetcherCmdArgs(FetcherCmdArgs),
-      WsCmdArgs(keyFile, acidFlakes, httpPortToListen, fetcherSecretPath,
-                noSubmitionHeartbeat, staticCache, baseUrl, certFile),
+      WsCmdArgs(keyFile, acidFlakes, httpPortToListen, logLevel,
+                fetcherSecretPath, noSubmitionHeartbeat, staticCache, baseUrl,
+                certFile),
       FetcherSecret(..),
       NoSubmitionHeartbeatSec,
       CertKey,
       Cert )
+
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
     ( FlakeRepo(indexerQueueLen, flakeIndex, flakes, acidFlakes,
@@ -41,6 +43,7 @@ import Network.Wai.Handler.Warp
 
 import Paths_a_piece_of_flake ( version )
 import Yesod.Core
+    ( Yesod(makeLogger, messageLoggerSource), Application, toWaiApp )
 
 import StmContainers.Map ( newIO )
 import UnliftIO.Concurrent ( forkFinally )
@@ -69,7 +72,7 @@ mkSettings yp ca logger =
       logger
       $(qLocation >>= liftLoc)
       "yesod-core"
-      LevelDebug
+      LevelError
       (toLogStr $ "Exception from Warp: " ++ show e)
 
 mkTlsSettings :: Tagged Cert FilePath -> Tagged CertKey FilePath -> TLSSettings
@@ -78,7 +81,7 @@ mkTlsSettings cert key = tlsSettings (untag cert) (untag key)
 runPlain :: Settings -> Application -> IO ()
 runPlain = runSettings
 
-initRepo :: MonadIO m => FetcherSecret -> WsCmdArgs -> m FlakeRepo
+initRepo :: PoF m => FetcherSecret -> WsCmdArgs -> m FlakeRepo
 initRepo fsec wsa = do
   flakesMap <- liftIO newIO
   fi <- newTVarIO emptyFlakeIndex
@@ -86,7 +89,8 @@ initRepo fsec wsa = do
   loadIndexFromScratch fi flakesMap . reverse =<< loadFromDb acidFlakeStorage
   mkFlakeRepo fsec wsa fi flakesMap acidFlakeStorage
 
-launchBackgroundThreads :: MonadUnliftIO m => Tagged NoSubmitionHeartbeatSec Second -> FlakeRepo -> m ()
+launchBackgroundThreads :: PoF m =>
+  Tagged NoSubmitionHeartbeatSec Second -> FlakeRepo -> m ()
 launchBackgroundThreads period fr = do
   persisFlakeTid <- forkFinally
     (forever $ do
@@ -94,44 +98,51 @@ launchBackgroundThreads period fr = do
         (fibonacciBackoff 10000)
         (\_ -> runPersistQueue fr.acidFlakes fr.acidQueue))
     (\case
-        Left e -> putStrLn $ "Flake Persistence thread ended: " <> show e
-        Right () -> putStrLn "Flake Persistence thread ended without errors")
-  putStrLn $ "Flake persistence thread is forked " <> show persisFlakeTid
+        Left e -> $(logError) $ "Flake Persistence thread ended: " <> show e
+        Right () -> $(logInfo) "Flake Persistence thread ended without errors")
+  $(logInfo) $ "Flake persistence thread is forked " <> show persisFlakeTid
   idxFlakeTid <- forkFinally
     (forever $ consumeIndexQueue fr.flakes fr.indexerQueue fr.indexerQueueLen fr.flakeIndex)
     (\case
-        Left e -> putStrLn $ "Flake text search indexer thread ended: " <> show e
-        Right () -> putStrLn "Flake text search indexer thread without errors")
-  putStrLn $ "Flake text search indexer thread is forked " <> show idxFlakeTid
+        Left e -> $(logError) $ "Flake text search indexer thread ended: " <> show e
+        Right () -> $(logInfo) "Flake text search indexer thread without errors")
+  $(logInfo) $ "Flake text search indexer thread is forked " <> show idxFlakeTid
   efsTid <- forkFinally
     (forever $ sendEmtpyFlakeSubmition fr period)
     (\case
-        Left e -> putStrLn $ "Empty Submition Thead ended: " <> show e
-        Right () -> putStrLn "Empty Submition Thead ended without errors")
-  putStrLn $ "Empty Submition thread is forked " <> show efsTid
+        Left e -> $(logError) $ "Empty Submition Thead ended: " <> show e
+        Right () -> $(logInfo) "Empty Submition Thead ended without errors")
+  $(logInfo) $ "Empty Submition thread is forked " <> show efsTid
 
 -- commented lines below are excuted via: @ghciwatch --enable-eval@
 -- $> import PieceOfFlake.CmdArgs
 -- $> execWithArgs runCmd . (:[]) =<< (fromMaybe "web" <$> PieceOfFlake.Prelude.lookupEnv "E")
 runCmd :: CmdArgs -> IO ()
 runCmd = \case
-  WebService ws -> do
-    $(trIo "start/ws")
-    fr <- (`initRepo` ws) =<< loadFetcherSecret ws.fetcherSecretPath
-    launchBackgroundThreads ws.noSubmitionHeartbeat fr
+  WebService ws ->
+    withLogs ws.logLevel $ do
+      $(logInfo) $ "Start WebService "  <> show ws
+      fr <- (`initRepo` ws) =<< loadFetcherSecret ws.fetcherSecretPath
+      launchBackgroundThreads ws.noSubmitionHeartbeat fr
 
-    let y = Ypp fr ws.staticCache ws.baseUrl
-
-    logger <- makeLogger y
-    case liftA2 mkTlsSettings ws.certFile ws.keyFile of
-      Nothing -> runPlain (mkSettings y ws logger) =<< toWaiApp y
-      Just tlsSngs -> runTLS tlsSngs (mkSettings y ws logger) =<< toWaiApp y
-  FetcherJob (FetcherCmdArgs serUrl rawNixCache fid fSecPath reqTimeout) ->
+      let y = Ypp fr ws.staticCache ws.baseUrl
+      lift $ do
+        logger <- makeLogger y
+        case liftA2 mkTlsSettings ws.certFile ws.keyFile of
+          Nothing -> runPlain (mkSettings y ws logger) =<< toWaiApp y
+          Just tlsSngs -> runTLS tlsSngs (mkSettings y ws logger) =<< toWaiApp y
+  FetcherJob fa@(FetcherCmdArgs serUrl rawNixCache fid fSecPath reqTimeout miLogLevel) ->
     let serUrl' = (setResponseTimeout serUrl $ untag reqTimeout) in
-      runStdoutLoggingT $
+      withLogs miLogLevel $ do
+        $(logInfo) $ "Start Fetcher "  <> show fa
         runFetcher serUrl' rawNixCache fid =<< loadFetcherSecret fSecPath
+
   PieceOfFlakeVersion ->
     putStrLn $ "Version " <> showVersion version
+
+withLogs :: MonadIO m => LogLevel -> LoggingT m a -> m a
+withLogs minLogL a =
+  runStdoutLoggingT $ filterLogger (\_ l -> l >= minLogL) a
 
 loadFetcherSecret :: MonadIO m => Tagged FetcherSecret FilePath -> m FetcherSecret
 loadFetcherSecret a = readFileTxt (untag a) <&> FetcherSecret

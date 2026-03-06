@@ -259,7 +259,7 @@ uploadFlakeAndFetch f = do
     Just fu -> catchAny (go fu) (onEx fu)
   where
     onEx fu e = do
-      putStrLn $ "nix failed for " <> show fu <> " with " <> show e
+      $(logError) $ "nix failed for " <> show fu <> " with " <> show e
       uploadFlakeAndFetch (Just (fu, Left $ show e))
     go fu =
       uploadFlakeAndFetch . Just . (fu,) . Right =<< metaFlakeFromUrl fu

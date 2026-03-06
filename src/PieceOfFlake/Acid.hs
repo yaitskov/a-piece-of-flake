@@ -9,7 +9,7 @@ import Data.Acid
       AcidState,
       Query,
       Update )
-import PieceOfFlake.CmdArgs
+import PieceOfFlake.CmdArgs ( AcidFlakesPath )
 import Data.SafeCopy ( deriveSafeCopy, base )
 import PieceOfFlake.Flake ( FlakeUrl, Flake )
 import PieceOfFlake.Prelude
@@ -40,15 +40,15 @@ openFlakeDb :: MonadIO m => Tagged AcidFlakesPath FilePath -> m (AcidState AcidF
 openFlakeDb (Tagged dbLocation) =
   liftIO $ openLocalStateFrom dbLocation (AcidFlakes [])
 
-updateDb :: MonadIO m => AcidState AcidFlakes -> Message -> m ()
+updateDb :: PoF m => AcidState AcidFlakes -> Message -> m ()
 updateDb db m = do
   liftIO $ update db (AddMessage m)
-  putStrLn $ "Persisted flake " <> show (fst m)
+  $(logInfo) $ "Persisted flake " <> show (fst m)
 
 loadFromDb :: MonadIO m => AcidState AcidFlakes -> m [(FlakeUrl, Flake)]
 loadFromDb db = liftIO (query db ViewMessages)
 
-runPersistQueue :: MonadUnliftIO m => AcidState AcidFlakes -> TQueue (FlakeUrl, Flake) -> m ()
+runPersistQueue :: PoF m => AcidState AcidFlakes -> TQueue (FlakeUrl, Flake) -> m ()
 runPersistQueue db q = finally go (void $ atomically $ readTQueue q)
   where
     go =

@@ -4,7 +4,6 @@ module PieceOfFlake.Flake.Repo where
 
 import Control.Concurrent (threadDelay)
 import Data.Acid ( AcidState )
-import Data.Aeson ( FromJSON, ToJSON )
 import PieceOfFlake.Acid ( AcidFlakes )
 import PieceOfFlake.Flake
     ( FetcherId,
@@ -55,7 +54,7 @@ mkFlakeRepo fetSec cmdA fi flakesMap acidFlakeStorage = do
       pure fi <*>
       newTQueueIO
 
-trySubmitFlakeToRepo :: MonadIO m => IpAdr -> FlakeRepo -> FlakeUrl -> m (Either Text Flake)
+trySubmitFlakeToRepo :: PoF m => IpAdr -> FlakeRepo -> FlakeUrl -> m (Either Text Flake)
 trySubmitFlakeToRepo ip fr fu = do
   now <- liftIO getCurrentTime
   atomicalog $ do
@@ -83,7 +82,7 @@ trySubmitFlakeToRepo ip fr fu = do
             lift $ insert f fu fr.flakes
             pure $ Right f
 
-popFlakeSubmition :: MonadIO m => FlakeRepo -> FetcherId -> m (Maybe FlakeUrl)
+popFlakeSubmition :: PoF m => FlakeRepo -> FetcherId -> m (Maybe FlakeUrl)
 popFlakeSubmition fr ftid = do
   now <- liftIO getCurrentTime
   atomicalog (popFlakeSubmitionStm ftid fr now)
@@ -127,7 +126,7 @@ instance FromJSON FetcherReq
 instance ToJSON FetcherReq
 
 -- | Store meta data for flake and ask for next flake submition
-addFetchedFlake :: MonadIO m =>
+addFetchedFlake :: PoF m =>
   FlakeRepo ->
   FetcherId ->
   (FlakeUrl, Either Text MetaFlake) ->
@@ -161,7 +160,8 @@ addFetchedFlake fr ftid (fu, fetchedFlake) = do
         Nothing ->
           $(logError) $ "Error flake " <> P.show fu <> " is missing in map"
 
-sendEmtpyFlakeSubmition :: MonadIO m => FlakeRepo -> Tagged NoSubmitionHeartbeatSec Second -> m ()
+sendEmtpyFlakeSubmition ::
+  PoF m => FlakeRepo -> Tagged NoSubmitionHeartbeatSec Second -> m ()
 sendEmtpyFlakeSubmition fr (Tagged d) = do
   liftIO $ threadDelay $ fromIntegral (convertUnit d :: Microsecond)
   atomicalog $ do

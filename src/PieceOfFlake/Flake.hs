@@ -8,9 +8,7 @@ import Data.Text qualified as T
 import PieceOfFlake.Prelude hiding (Map)
 import Text.Blaze ( ToMarkup )
 import Yesod.Core
-    ( FromJSON,
-      ToJSON,
-      typeJson,
+    ( typeJson,
       ToContent(..),
       ToTypedContent(..),
       TypedContent(TypedContent), PathPiece )

@@ -1,7 +1,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 module PieceOfFlake.CmdArgs where
 
-import Data.Aeson ( FromJSON, ToJSON )
 import Data.Either.Combinators ( mapLeft )
 import Network.HostName ( getHostName )
 import Options.Applicative
@@ -37,6 +36,7 @@ data WsCmdArgs
     , fetcherSecretPath :: Tagged FetcherSecret FilePath
     , noSubmitionHeartbeat :: Tagged NoSubmitionHeartbeatSec Second
     , allowResubmitBadFlakeIn :: Tagged ResubmitPeriod NominalDiffTime
+    , logLevel :: LogLevel
     }
   deriving Show
 
@@ -47,6 +47,7 @@ data FetcherCmdArgs
     , fetcherId :: FetcherId
     , fetcherSecretPath :: Tagged FetcherSecret FilePath
     , noSubmitionHeartbeat :: Tagged NoSubmitionHeartbeatSec Second
+    , logLevel :: LogLevel
     }
   deriving Show
 
@@ -62,9 +63,9 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
     serviceP = WebService <$> (WsCmdArgs <$> portOption <*> certO <*>
       certKeyO <*> acidOption <*> cacheSecondsO <*>
       baseUrlO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
-      allowResubmitBadFlakeInO)
+      allowResubmitBadFlakeInO <*> logLevelO)
     fetcherP = FetcherJob <$> (FetcherCmdArgs <$> urlOption <*> rawNixCacheO <*>
-      customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO)
+      customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*> logLevelO)
     cmdp =
       hsubparser
         (  command "web" (infoP serviceP "launch web service")
@@ -87,6 +88,18 @@ allowResubmitBadFlakeInO = Tagged <$>
     <> value 600
     <> help "how soon bad flake can be resubmitted"
   )
+
+logLevelO :: Parser LogLevel
+logLevelO =
+  option auto
+  ( long "log-level"
+    <> short 'l'
+    <> showDefault
+    <> value LevelDebug
+    <> help "app log level"
+    <> metavar "LOG"
+  )
+
 noSubmitionHeartbeatO :: Parser (Tagged NoSubmitionHeartbeatSec Second)
 noSubmitionHeartbeatO = Tagged <$>
   option auto

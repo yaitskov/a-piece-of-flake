@@ -3,10 +3,12 @@ module PieceOfFlake.Prelude
   , duration
   , readFileTxt
   , toMs
+  , PoF
   ) where
 
 import Control.Monad.Catch as X (Handler (..))
 import Control.Monad.Logger as X
+import Data.Aeson as X ( FromJSON, ToJSON )
 import Data.Time.Clock as X
 import Data.Tagged as X
 import Relude as X hiding (Handle, intercalate)
@@ -23,3 +25,5 @@ readFileTxt fp = decodeUtf8 <$>  readFileBS fp
 
 toMs :: TimeUnit a => a -> Int
 toMs = fromIntegral . toMicroseconds
+
+type PoF m = (MonadLogger m, MonadIO m, MonadUnliftIO m)
