@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedRecordDot #-}
 module PieceOfFlake.Req
  ( module PieceOfFlake.Req
  , module Network.HTTP.Req
@@ -13,12 +14,26 @@ urlRegex :: Text
 urlRegex = "^(http|https)://([a-z0-9._-]+)(:([1-9][0-9]*))?/?$"
 
 data DynamicUrl
-  = UrlHttp (Url 'Http) (Option 'Http)
-  | UrlHttps (Url 'Https) (Option 'Https)
+  = UrlHttp
+    { duu :: Url 'Http
+    , duo :: Option 'Http
+    }
+  | UrlHttps
+    { duus :: Url 'Https
+    , duos :: Option 'Https
+    }
 
 instance Show DynamicUrl where
   show (UrlHttp ur o) = "http://" <> S.show ur <> S.show (queryParamToList o)
-  show (UrlHttps ur o) = "http://" <> S.show ur <> S.show (queryParamToList o)
+  show (UrlHttps ur o) = "https://" <> S.show ur <> S.show (queryParamToList o)
+
+
+secToTimeout :: Second -> Option a
+secToTimeout = responseTimeout . fromIntegral . toMicroseconds
+
+setResponseTimeout :: DynamicUrl -> Second ->  DynamicUrl
+setResponseTimeout a@UrlHttp {} s = a { duo = a.duo <> secToTimeout s }
+setResponseTimeout a@UrlHttps {} s = a { duos = a.duos <> secToTimeout s }
 
 parseUrl :: Text -> Either Text DynamicUrl
 parseUrl ur =

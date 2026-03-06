@@ -2,7 +2,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 module PieceOfFlake.Index where
 
-import Control.Monad.Logger ( logError, logInfo, MonadLogger )
 import Data.Aeson ( FromJSON )
 import Data.Map.Strict qualified as M
 import Data.SearchEngine

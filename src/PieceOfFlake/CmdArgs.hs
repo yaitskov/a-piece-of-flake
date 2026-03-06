@@ -3,7 +3,6 @@ module PieceOfFlake.CmdArgs where
 
 import Data.Aeson ( FromJSON, ToJSON )
 import Data.Either.Combinators ( mapLeft )
-import Data.Time.Units
 import Network.HostName ( getHostName )
 import Options.Applicative
 import PieceOfFlake.Flake ( FetcherId(..) )
@@ -13,6 +12,7 @@ import PieceOfFlake.Req
     ( DynamicUrl(UrlHttp), http, port, parseUrl )
 import Text.Show ( Show(show) )
 
+
 data HttpPort
 data Cert
 data CertKey
@@ -21,6 +21,7 @@ data StaticCacheSeconds
 data RawNixCacheOutput
 data BaseUrl
 data NoSubmitionHeartbeatSec
+data ResubmitPeriod
 newtype FetcherSecret = FetcherSecret Text deriving (Eq, Generic, FromJSON, ToJSON)
 instance Show FetcherSecret where
   show _ = "****"
@@ -35,6 +36,7 @@ data WsCmdArgs
     , baseUrl :: Tagged BaseUrl Text
     , fetcherSecretPath :: Tagged FetcherSecret FilePath
     , noSubmitionHeartbeat :: Tagged NoSubmitionHeartbeatSec Second
+    , allowResubmitBadFlakeIn :: Tagged ResubmitPeriod NominalDiffTime
     }
   deriving Show
 
@@ -44,6 +46,7 @@ data FetcherCmdArgs
     , rawNixCache :: Tagged RawNixCacheOutput (Maybe FilePath)
     , fetcherId :: FetcherId
     , fetcherSecretPath :: Tagged FetcherSecret FilePath
+    , noSubmitionHeartbeat :: Tagged NoSubmitionHeartbeatSec Second
     }
   deriving Show
 
@@ -58,9 +61,10 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
   where
     serviceP = WebService <$> (WsCmdArgs <$> portOption <*> certO <*>
       certKeyO <*> acidOption <*> cacheSecondsO <*>
-      baseUrlO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO)
+      baseUrlO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
+      allowResubmitBadFlakeInO)
     fetcherP = FetcherJob <$> (FetcherCmdArgs <$> urlOption <*> rawNixCacheO <*>
-      customFetcherIdO <*> fetcherSecretPathO)
+      customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO)
     cmdp =
       hsubparser
         (  command "web" (infoP serviceP "launch web service")
@@ -75,6 +79,14 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
 defaultPort :: Int
 defaultPort = 3003
 
+allowResubmitBadFlakeInO :: Parser (Tagged ResubmitPeriod NominalDiffTime)
+allowResubmitBadFlakeInO = Tagged <$>
+  option auto
+  ( long "resubmit-bad-flake-interval"
+    <> showDefault
+    <> value 600
+    <> help "how soon bad flake can be resubmitted"
+  )
 noSubmitionHeartbeatO :: Parser (Tagged NoSubmitionHeartbeatSec Second)
 noSubmitionHeartbeatO = Tagged <$>
   option auto

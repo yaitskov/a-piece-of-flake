@@ -28,6 +28,10 @@ body {
     --bulma-body-overflow-x: scroll !important;
 }
 
+body pre.error {
+    white-space: pre-wrap;
+}
+
 body .table {
     background: transparent;
 }

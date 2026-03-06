@@ -1,7 +1,6 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 module PieceOfFlake.Fetcher where
-import Control.Monad.Catch ( Handler(Handler) )
 import Crypto.Hash.SHA1 (hashlazy)
 import Data.Aeson
     ( FromJSON(parseJSON),
@@ -20,23 +19,13 @@ import PieceOfFlake.Flake
 import PieceOfFlake.Flake.Repo ( FetcherReq(FetcherReq) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req
-    ( DynamicUrl,
-      MonadHttp,
-      POST(POST),
-      ReqBodyJson(ReqBodyJson),
-      HttpException(VanillaHttpException),
-      defaultHttpConfig,
-      jsonResponse,
-      responseBody,
-      runReq,
-      dynReq,
-      isStatusCodeException,
-      responseStatusCode )
-
-
 import System.Process ( readProcess )
 import UnliftIO.Retry
-    ( fibonacciBackoff, recovering, recoverAll, limitRetries, constantDelay )
+    ( capDelay,
+      fibonacciBackoff,
+      limitRetries,
+      recoverAll,
+      recovering )
 import UnliftIO.Directory
     ( doesFileExist, createDirectoryIfMissing )
 import System.FilePath ( (</>) )
@@ -68,6 +57,7 @@ readJsonCached cacheDir prg prgArgs = do
       callDir = cacheDir </> cmdH2 </> cmdHashRest
       outJson = callDir </> "out.json"
       cmdFile = callDir </> "cmd.sh"
+  putLBSLn $ "readJsonCached " <> cmd
   outJsonExist <- doesFileExist outJson
   if outJsonExist
     then do
@@ -101,7 +91,12 @@ data FetcherConf
   , fetcherSecret :: FetcherSecret
   }
 
-type FetcherM m = (MonadReader FetcherConf m, MonadIO m, MonadUnliftIO m)
+type FetcherM m =
+  ( MonadReader FetcherConf m
+  , MonadIO m
+  , MonadUnliftIO m
+  , MonadLogger m
+  )
 
 readJson :: (FetcherM m, FromJSON a) => Text -> [Text] -> m a
 readJson prg prgArgs = do
@@ -228,46 +223,59 @@ metaFlakeFromUrl fu = do
             (filter (/= PackageName "default") pkgNames)
 
 
-uploadFlakeAndFetch :: (FetcherM m, MonadHttp m) =>
+uploadFlakeAndFetch :: (FetcherM m) =>
   Maybe (FlakeUrl, Either Text MetaFlake)
   -> m ()
 uploadFlakeAndFetch f = do
   fctx <- ask
-  let rqb = ReqBodyJson $ FetcherReq fctx.fetcherId f fctx.fetcherSecret
+  let fetr = FetcherReq fctx.fetcherId f fctx.fetcherSecret
+      rqb = ReqBodyJson fetr
+  $(logDebug) $ "sending " <> show fetr
   jr <- recovering
-          (fibonacciBackoff 100_000 <> limitRetries 10)
+          (fibonacciBackoff 100_000 <> limitRetries 6)
           [ \_rs -> Handler $
               \case
                 he@VanillaHttpException {} -> do
+                  $(logError) $ "Vanila Exception " <> show he
                   case isStatusCodeException he of
                     Nothing -> pure False
                     Just r ->
                       case responseStatusCode r of
                         scode ->
                           pure $ scode < 400 || scode >= 500
-                _ -> pure False
+                oe -> do
+                  $(logError) $ "Other Exception " <> show oe
+                  pure False
           ]
-          (\_ -> dynReq POST fctx.fetUrl "fetch-new-flake-submitions" rqb jsonResponse)
+          (\_ ->
+              runReq (defaultHttpConfig
+                { httpConfigRetryJudgeException = \_ _ -> False
+                , httpConfigRetryJudge = \_ _ -> False
+                })
+              $ dynReq POST fctx.fetUrl "fetch-new-flake-submitions" rqb jsonResponse)
+  $(logDebug) $ "Response from WS for " <> show (fmap fst f) <>  ": "   <> show (responseBody jr)
   case responseBody jr of
     Nothing -> uploadFlakeAndFetch Nothing
     Just fu -> catchAny (go fu) (onEx fu)
   where
-    onEx fu e =
+    onEx fu e = do
+      putStrLn $ "nix failed for " <> show fu <> " with " <> show e
       uploadFlakeAndFetch (Just (fu, Left $ show e))
     go fu =
       uploadFlakeAndFetch . Just . (fu,) . Right =<< metaFlakeFromUrl fu
 
-runFetcher :: MonadUnliftIO m =>
+runFetcher :: (MonadLogger m, MonadUnliftIO m) =>
   DynamicUrl ->
   Tagged RawNixCacheOutput (Maybe FilePath) ->
   FetcherId ->
   FetcherSecret ->
   m ()
 runFetcher serviceUrl rawNixCa fid fsec = do
+  $(logInfo) $ "Fetcher " <> show fid <> " started for " <> show serviceUrl
   ca <- nixCurrentArch
   forever $ do
     recoverAll
-      (constantDelay 6_000_000)
-      (\_ -> runReq defaultHttpConfig $
-        runReaderT (uploadFlakeAndFetch Nothing)
-          $ FetcherConf serviceUrl ca rawNixCa fid fsec)
+      (capDelay (toMs (6 :: Second)) (fibonacciBackoff (toMs (1 :: Second))))
+      (\_ ->
+         runReaderT (uploadFlakeAndFetch Nothing)
+           $ FetcherConf serviceUrl ca rawNixCa fid fsec)

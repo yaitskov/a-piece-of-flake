@@ -1,13 +1,19 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 module PieceOfFlake.CmdRun where
 
-import Control.Monad.Logger ( liftLoc, ToLogStr(toLogStr) )
-import Data.Time.Units ( Second )
 import Data.Version (showVersion)
 import Language.Haskell.TH.Syntax (qLocation)
 import PieceOfFlake.Acid
     ( loadFromDb, openFlakeDb, runPersistQueue )
 import PieceOfFlake.CmdArgs
+    ( CmdArgs(..),
+      FetcherCmdArgs(FetcherCmdArgs),
+      WsCmdArgs(keyFile, acidFlakes, httpPortToListen, fetcherSecretPath,
+                noSubmitionHeartbeat, staticCache, baseUrl, certFile),
+      FetcherSecret(..),
+      NoSubmitionHeartbeatSec,
+      CertKey,
+      Cert )
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
     ( FlakeRepo(indexerQueueLen, flakeIndex, flakes, acidFlakes,
@@ -18,6 +24,7 @@ import PieceOfFlake.Index
     ( consumeIndexQueue, emptyFlakeIndex, loadIndexFromScratch )
 import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.Prelude
+import PieceOfFlake.Req ( setResponseTimeout )
 import Network.Wai.Handler.WarpTLS ( runTLS, tlsSettings, TLSSettings )
 import Network.Wai.Handler.Warp
     ( Settings,
@@ -31,12 +38,10 @@ import Network.Wai.Handler.Warp
       runSettings,
       defaultSettings,
       defaultShouldDisplayException )
+
 import Paths_a_piece_of_flake ( version )
 import Yesod.Core
-    ( toWaiApp,
-      LogLevel(LevelError),
-      Application,
-      Yesod(makeLogger, messageLoggerSource) )
+
 import StmContainers.Map ( newIO )
 import UnliftIO.Concurrent ( forkFinally )
 import UnliftIO.Retry ( fibonacciBackoff, recoverAll )
@@ -64,7 +69,7 @@ mkSettings yp ca logger =
       logger
       $(qLocation >>= liftLoc)
       "yesod-core"
-      LevelError
+      LevelDebug
       (toLogStr $ "Exception from Warp: " ++ show e)
 
 mkTlsSettings :: Tagged Cert FilePath -> Tagged CertKey FilePath -> TLSSettings
@@ -73,13 +78,13 @@ mkTlsSettings cert key = tlsSettings (untag cert) (untag key)
 runPlain :: Settings -> Application -> IO ()
 runPlain = runSettings
 
-initRepo :: MonadIO m => FetcherSecret -> Tagged AcidFlakesPath FilePath -> m FlakeRepo
-initRepo fsec acidFlakes = do
+initRepo :: MonadIO m => FetcherSecret -> WsCmdArgs -> m FlakeRepo
+initRepo fsec wsa = do
   flakesMap <- liftIO newIO
   fi <- newTVarIO emptyFlakeIndex
-  acidFlakeStorage <- openFlakeDb acidFlakes
+  acidFlakeStorage <- openFlakeDb wsa.acidFlakes
   loadIndexFromScratch fi flakesMap . reverse =<< loadFromDb acidFlakeStorage
-  mkFlakeRepo fsec fi flakesMap acidFlakeStorage
+  mkFlakeRepo fsec wsa fi flakesMap acidFlakeStorage
 
 launchBackgroundThreads :: MonadUnliftIO m => Tagged NoSubmitionHeartbeatSec Second -> FlakeRepo -> m ()
 launchBackgroundThreads period fr = do
@@ -107,12 +112,12 @@ launchBackgroundThreads period fr = do
 
 -- commented lines below are excuted via: @ghciwatch --enable-eval@
 -- $> import PieceOfFlake.CmdArgs
--- $> execWithArgs runCmd ["web"]
+-- $> execWithArgs runCmd . (:[]) =<< (fromMaybe "web" <$> PieceOfFlake.Prelude.lookupEnv "E")
 runCmd :: CmdArgs -> IO ()
 runCmd = \case
   WebService ws -> do
     $(trIo "start/ws")
-    fr <- (`initRepo` ws.acidFlakes) =<< loadFetcherSecret ws.fetcherSecretPath
+    fr <- (`initRepo` ws) =<< loadFetcherSecret ws.fetcherSecretPath
     launchBackgroundThreads ws.noSubmitionHeartbeat fr
 
     let y = Ypp fr ws.staticCache ws.baseUrl
@@ -121,8 +126,10 @@ runCmd = \case
     case liftA2 mkTlsSettings ws.certFile ws.keyFile of
       Nothing -> runPlain (mkSettings y ws logger) =<< toWaiApp y
       Just tlsSngs -> runTLS tlsSngs (mkSettings y ws logger) =<< toWaiApp y
-  FetcherJob (FetcherCmdArgs serUrl rawNixCache fid fSecPath) ->
-    runFetcher serUrl rawNixCache fid =<< loadFetcherSecret fSecPath
+  FetcherJob (FetcherCmdArgs serUrl rawNixCache fid fSecPath reqTimeout) ->
+    let serUrl' = (setResponseTimeout serUrl $ untag reqTimeout) in
+      runStdoutLoggingT $
+        runFetcher serUrl' rawNixCache fid =<< loadFetcherSecret fSecPath
   PieceOfFlakeVersion ->
     putStrLn $ "Version " <> showVersion version
 

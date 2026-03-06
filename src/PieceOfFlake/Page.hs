@@ -24,15 +24,14 @@ import PieceOfFlake.Flake.Repo
       validateRawFlakeUrl )
 
 import PieceOfFlake.Index ( findFlakes )
-import PieceOfFlake.Prelude hiding (Map, error, pi)
+import PieceOfFlake.Prelude hiding (Map, error, pi, Handler)
 import PieceOfFlake.Th ( includeFile )
 import PieceOfFlake.Yesod
     ( Ts(Ts),
       mp3Mime,
       bulmaLayout,
       clientAdrToDec4,
-      getClientAdr,
-      internalError )
+      getClientAdr )
 import StmContainers.Map ( lookup )
 import Text.Blaze.Internal ( MarkupM )
 import Yesod.Core
@@ -163,7 +162,7 @@ getPublicationR =
                   Check flake status <a id=flake-link href="#">here
             <div class=field>
               <div id=error-output-hid class=is-hidden>
-                <pre id=error-output class="notification is-danger">
+                <pre id=error-output class="notification is-danger error">
             |]
 
 -- getAboutR :: Handler Html
@@ -305,7 +304,7 @@ getFlakeR fu = do
                   <td>
                     Error
                   <td class="notification is-danger">
-                    <pre>#{error}
+                    <pre class=error>#{error}
                 |]
         FlakeFetched { flakeUrl, uploadedAt, meta} ->
           let
@@ -432,7 +431,7 @@ postSubmitFlakeR = do
         ip <- IpAdr . clientAdrToDec4 <$> getClientAdr
         Ypp { repo } <- getYesod
         trySubmitFlakeToRepo ip repo fu >>= \case
-          Left e -> internalError e
+          Left e -> invalidArgs [e]
           Right f -> pure f
 
 postFetchNewFlakeSubmitionsR :: Handler (Maybe FlakeUrl)
@@ -445,7 +444,8 @@ postFetchNewFlakeSubmitionsR = do
       putBSLn $ toStrict $ encode r <> " :: Maybe Flake  <-> "  <> show r
       pure r
     FetcherReq fetcherId (Just fetchedFlake) fsec -> verifyFetcher fsec $ do
-      addFetchedFlake repo fetcherId fetchedFlake
+        $(logInfo) $ "Fetcher returned " <> show fetchedFlake
+        addFetchedFlake repo fetcherId fetchedFlake
 
 verifyFetcher :: FetcherSecret -> Handler a -> Handler a
 verifyFetcher gotFsec a = do

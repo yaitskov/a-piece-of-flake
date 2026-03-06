@@ -1,6 +1,56 @@
 /* a piece of flake
    github:yaitskov/add-dependent-file
 */
+const xhrError = (xhr) => {
+  if (xhr.responseText && xhr.responseText.length > 1) {
+    try {
+      const respO = JSON.parse(xhr.responseText);
+      if (respO.errors instanceof Array) {
+        return respO.errors.join("\n");
+      }
+    } catch (e) {
+      console.error(`${xhr.responseText} => ${e}`);
+    }
+    return xhr.responseText;
+  } else {
+    if (xhr.statusText && xhr.statusText.length > 1) {
+      return xhr.statusText;
+    } else {
+      return "Server is down or it is offline";
+    }
+  }
+};
+
+const xhrPost = (urlPath, payload, okCb, opsCb) => {
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", urlPath, true);
+  xhr.setRequestHeader('Content-Type', 'application/json');
+  xhr.setRequestHeader('Accept', 'application/json');
+  xhr.send(JSON.stringify(payload));
+
+  xhr.onload = (e) => {
+    if (xhr.readyState === 4) {
+      if (xhr.status === 200) {
+        var r = null;
+        try {
+          r = JSON.parse(xhr.responseText);
+        } catch (je) {
+          opsCb(`Failed to parse response as JSON: ${je}`);
+          return;
+        }
+        okCb(r);
+        } else {
+          opsCb(xhrError(xhr));
+        }
+    } else {
+      opsCb(xhrError(xhr));
+    }
+  };
+  xhr.onerror = (e) => {
+    opsCb(`${e} => ${xhrError(xhr)}`);
+  };
+  return xhr;
+};
 
 const ready = () => {
   console.log(`Document ready hook is triggered`);
@@ -42,43 +92,30 @@ const searchFlakesBy = (pattern) => {
   foundFlakes.className = "is-hidden";
   noFlakesFound.className = "is-hidden";
   console.log(`Find flakes matching pattern [${pattern}]`);
-  var xhr = new XMLHttpRequest();
-  xhr.open("POST", "find-flakes", true);
-  xhr.setRequestHeader('Content-Type', 'application/json');
-  xhr.send(JSON.stringify({skipBroken: false, searchPattern: tokenize(pattern)}));
-  xhr.onload = (e) => {
-    if (xhr.readyState === 4) {
-      if (xhr.status === 200) {
-        try {
-          const foundflakeUrls = JSON.parse(xhr.responseText);
-          if (foundflakeUrls.length == 0) {
-            noFlakesFound.className = "";
-          } else {
-            foundFlakes.className = "";
-          }
-          for (const u in foundflakeUrls) {
-            const tr = document.createElement("tr");
-            const td = document.createElement("td");
-            tr.appendChild(td);
-            const a = document.createElement("a");
-            td.appendChild(a);
-            a.setAttribute('href', flakeViewUrl(foundflakeUrls[u]));
-            a.innerText = foundflakeUrls[u];
-            flakesTbody.appendChild(tr);
-          }
-        } catch (je) {
-          errorOutput.innerText = `Failed to parse response as JSON: ${je}`;
-          errorOutput.parentNode.className = "";
-        }
+  xhrPost(
+    "find-flakes",
+    {skipBroken: false, searchPattern: tokenize(pattern)},
+    (foundflakeUrls) => {
+      if (foundflakeUrls.length == 0) {
+        noFlakesFound.className = "";
       } else {
-        errorOutput.innerText = `Status is not 200 but ${xhr.statusText}`;
-        errorOutput.parentNode.className = "";
+        foundFlakes.className = "";
       }
-    } else {
-      errorOutput.innerText = `Ready statuis is not 4: ${xhr.statusText}`;
+      for (const u in foundflakeUrls) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        tr.appendChild(td);
+        const a = document.createElement("a");
+        td.appendChild(a);
+        a.setAttribute('href', flakeViewUrl(foundflakeUrls[u]));
+        a.innerText = foundflakeUrls[u];
+        flakesTbody.appendChild(tr);
+      }
+    },
+    (err) => {
+      errorOutput.innerText = err;
       errorOutput.parentNode.className = "";
-    }
-  };
+    });
   return false;
 };
 
@@ -93,10 +130,7 @@ const submitFlake = (url) => {
   }
 
   console.log(`Sumbitting flake ${url}`);
-  const xhr = new XMLHttpRequest();
-  xhr.open("POST", "submit-flake", true);
-  xhr.setRequestHeader('Content-Type', 'application/json');
-  xhr.send(JSON.stringify(url));
+
   const sumbittedNotification = document.getElementById("sumbitted-notification");
   const errorOutputHid = document.getElementById("error-output-hid");
   const errorOutput = document.getElementById("error-output");
@@ -105,49 +139,40 @@ const submitFlake = (url) => {
   errorOutput.innerText = "";
   errorOutputHid.className = "is-hidden";
   sumbittedNotification.className = "is-hidden";
-  xhr.onload = (e) => {
-    if (xhr.readyState === 4) {
-      if (xhr.status === 200) {
-        console.log(xhr.responseText);
-        try {
-          const flake = JSON.parse(xhr.responseText);
-          console.log(`${flake}`);
-          switch(flake.tag) {
-          case "SubmittedFlake":
-          case "FlakeIsBeingFetched":
-            /* play sound */
-            flush.onended = (e) => {
-              window.location = flakeViewUrl(url);
-            };
-            flush.play();
-            flakeLink.setAttribute('href', flakeViewUrl(url));
-            sumbittedNotification.className = "";
-            break;
-          case "FlakeFetched":
-          case "FlakeIndexed":
-            /* just redirect to flake view page */
-            flakeLink.setAttribute('href', flakeViewUrl(url));
-            sumbittedNotification.className = "";
-            setTimeout(() => window.location = flakeViewUrl(url), 1000);
-            break;
-          case "BadFlake":
-          default:
-            errorOutput.innerText = flake.error;
-            errorOutputHid.className = '';
-          }
-        } catch (je) {
-          errorOutput.innerText = `Failed to parse response as JSON ${je}`;
-          errorOutputHid.className = '';
-        }
-      } else {
-        errorOutput.innerText = `Submition of flake ${url} has failed: ${xhr.statusText}`;
+
+  xhrPost(
+    "submit-flake",
+    url,
+    (flake) => {
+      console.log(`${flake}`);
+      switch(flake.tag) {
+      case "SubmittedFlake":
+      case "FlakeIsBeingFetched":
+        /* play sound */
+        flush.onended = (e) => {
+          window.location = flakeViewUrl(url);
+        };
+        flush.play();
+        flakeLink.setAttribute('href', flakeViewUrl(url));
+        sumbittedNotification.className = "";
+        break;
+      case "FlakeFetched":
+      case "FlakeIndexed":
+        /* just redirect to flake view page */
+        flakeLink.setAttribute('href', flakeViewUrl(url));
+        sumbittedNotification.className = "";
+        setTimeout(() => window.location = flakeViewUrl(url), 1000);
+        break;
+      case "BadFlake":
+      default:
+        errorOutput.innerText = flake.error;
         errorOutputHid.className = '';
       }
+    },
+    (err) => {
+      errorOutput.innerText = `Submition of flake ${url} has failed: ${err}`;
+      errorOutputHid.className = '';
     }
-  };
-  xhr.onerror = (e) => {
-    errorOutput.innerText = `Submition of flake ${url} has failed: ${xhr.statusText}`;
-    errorOutputHid.className = '';
-  };
+  );
   return false;
 };
