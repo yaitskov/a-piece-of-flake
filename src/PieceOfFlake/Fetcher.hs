@@ -150,7 +150,7 @@ nixCurrentArch =
 
 data RawFlakeOutputs
   = RawFlakeOutputs
-  { packages :: Map Architecture (Map PackageName ())
+  { packages :: Maybe (Map Architecture (Map PackageName ()))
   , nixosModules :: Maybe (Map Text ())
   } deriving (Show, Eq, Generic)
 
@@ -206,7 +206,7 @@ metaFlakeFromUrl fu = do
   rfi <- nixFlakeInfo fu
   curArch <- asks arch
   rfo <- nixFlakeShow fu
-  let archPkgs = fmap M.keys . M.filterWithKey (\a _ps -> a == curArch) $ rfo.packages
+  let archPkgs = fmap M.keys . M.filterWithKey (\a _ps -> a == curArch) $ fromMaybe mempty rfo.packages
   metaPackages <- M.fromList <$> mapM mapArchPkgs (M.toList archPkgs)
   pure MetaFlake
     { description = rfi.description
