@@ -151,7 +151,7 @@ nixCurrentArch =
 data RawFlakeOutputs
   = RawFlakeOutputs
   { packages :: Map Architecture (Map PackageName ())
-  , nixosModules :: Map Text ()
+  , nixosModules :: Maybe (Map Text ())
   } deriving (Show, Eq, Generic)
 
 instance FromJSON RawFlakeOutputs
@@ -212,7 +212,7 @@ metaFlakeFromUrl fu = do
     { description = rfi.description
     , packages = metaPackages
     , rev = rfi.revision
-    , hasNixOsModules = M.size rfo.nixosModules > 0
+    , hasNixOsModules = not $ null rfo.nixosModules
     , flakeDeps = []
     }
   where
