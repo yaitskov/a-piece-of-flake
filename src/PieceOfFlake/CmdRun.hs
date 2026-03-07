@@ -13,6 +13,7 @@ import PieceOfFlake.Index
 import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req ( setResponseTimeout )
+import PieceOfFlake.Stats
 import Network.Wai.Handler.WarpTLS ( runTLS, tlsSettings, TLSSettings )
 import Network.Wai.Handler.Warp
     ( Settings,
@@ -72,8 +73,9 @@ initRepo fsec wsa = do
   flakesMap <- liftIO newIO
   fi <- mkFlakeIndex wsa.indexQueryCacheSize
   acidFlakeStorage <- openFlakeDb wsa.acidFlakes
-  loadIndexFromScratch fi flakesMap . reverse =<< loadFromDb acidFlakeStorage
-  mkFlakeRepo fsec wsa fi flakesMap acidFlakeStorage
+  rs <- mkRepoStats
+  loadIndexFromScratch rs fi flakesMap . reverse =<< loadFromDb acidFlakeStorage
+  mkFlakeRepo fsec wsa fi flakesMap acidFlakeStorage rs
 
 launchBackgroundThreads :: PoF m =>
   Tagged NoSubmitionHeartbeatSec Second -> FlakeRepo -> m ()
@@ -88,7 +90,7 @@ launchBackgroundThreads period fr = do
         Right () -> $(logInfo) "Flake Persistence thread ended without errors")
   $(logInfo) $ "Flake persistence thread is forked " <> show persisFlakeTid
   idxFlakeTid <- forkFinally
-    (forever $ consumeIndexQueue fr.flakes fr.flakeIndex)
+    (forever $ consumeIndexQueue fr.repoStats fr.flakes fr.flakeIndex)
     (\case
         Left e -> $(logError) $ "Flake text search indexer thread ended: " <> show e
         Right () -> $(logInfo) "Flake text search indexer thread without errors")

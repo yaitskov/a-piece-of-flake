@@ -37,6 +37,8 @@ import PieceOfFlake.Prelude hiding (pi, Map)
 import PieceOfFlake.Stm
     ( readTQueue, writeTQueue, TQueue, newTQueueIO, atomicalog )
 import StmContainers.Map ( insert, listTNonAtomic, lookup, Map )
+import PieceOfFlake.Stats
+    ( RepoStatsF(indexedFlakes, fetchedFlakes) )
 
 type FlakeSearchEngine = SearchEngine (FlakeUrl, MetaFlake) FlakeUrl () ()
 
@@ -96,8 +98,8 @@ emptySearchEngine =
     , paramAutosuggestPostfilterLimit = 10
     }
 
-consumeIndexQueue :: PoF m => Map FlakeUrl Flake -> FlakeIndex -> m ()
-consumeIndexQueue fs fi = do
+consumeIndexQueue :: PoF m => RepoStatsF TVar -> Map FlakeUrl Flake -> FlakeIndex -> m ()
+consumeIndexQueue rs fs fi = do
   now <- liftIO getCurrentTime
   atomicalog $ do
     $(logInfo) "Wait for flakes to index for full text search"
@@ -107,7 +109,7 @@ consumeIndexQueue fs fi = do
     $(logInfo) $ "Start index flake " <> show fu <> "; index queue " <> show ql
     lift (lookup fu fs) >>= \case
       Nothing -> $(logError) $ "Flake " <> show fu <> " is missing"
-      Just f -> indexFlake now fi fs f
+      Just f -> indexFlake rs now fi fs f
 
 indexNewFlake :: (MonadLogger (t STM), MonadTrans t) => FlakeIndex -> FlakeUrl -> t STM ()
 indexNewFlake fi fu = do
@@ -117,14 +119,24 @@ indexNewFlake fi fu = do
     readTVar fi.indexerQueueLen
   $(logInfo) $ "Indexer queue increased to " <> show iql
 
-indexFlake :: (MonadLogger (t STM), MonadTrans t) => UTCTime -> FlakeIndex -> Map FlakeUrl Flake -> Flake -> t STM ()
-indexFlake now fi fs f =
+indexFlake :: (MonadLogger (t STM), MonadTrans t) =>
+  RepoStatsF TVar -> UTCTime -> FlakeIndex -> Map FlakeUrl Flake -> Flake -> t STM ()
+indexFlake rs  =
+  indexFlake' $ do
+    lift $ do
+      modifyTVar' rs.fetchedFlakes (flip (-) 1)
+      modifyTVar' rs.indexedFlakes (1 +)
+
+indexFlake' :: (MonadLogger (t STM), MonadTrans t) =>
+  t STM () -> UTCTime -> FlakeIndex -> Map FlakeUrl Flake -> Flake -> t STM ()
+indexFlake' onIndexed now fi fs f =
   case f of
    ff@FlakeFetched { flakeUrl } ->
      let fu = flakeUrl
          ixf = FlakeIndexed fu now ff.meta
      in
        do
+         onIndexed
          lift $ do
            insert ixf fu fs
            modifyTVar' fi.searchEngine (insertDoc (fu, ff.meta))
@@ -132,8 +144,8 @@ indexFlake now fi fs f =
    _nff -> $(logError) $ "Flake " <> show f.flakeUrl <> " is not in the fetched state"
 
 loadIndexFromScratch ::
-  PoF m => FlakeIndex -> Map FlakeUrl Flake -> [(FlakeUrl, Flake)] -> m ()
-loadIndexFromScratch fi fsm fs = do
+  PoF m => RepoStatsF TVar -> FlakeIndex -> Map FlakeUrl Flake -> [(FlakeUrl, Flake)] -> m ()
+loadIndexFromScratch rs fi fsm fs = do
   now <- liftIO getCurrentTime
   atomicalog $ do
     $(logInfo) "Started init full text search index population"
@@ -141,7 +153,7 @@ loadIndexFromScratch fi fsm fs = do
     $(logInfo) "Ended init full text search index population"
   where
     go now = \case
-      (_, ff@FlakeFetched {}) -> indexFlake now fi fsm ff
+      (_, ff@FlakeFetched {}) -> indexFlake' (lift $ modifyTVar' rs.indexedFlakes (1 +)) now fi fsm ff
       (fu, nff) -> lift $ insert nff fu fsm
 
 data FlakeSearchReq
@@ -167,6 +179,7 @@ findFlakes fs fi FlakeSearchReq { searchPattern = ps } =
   where
     fromIdx now t1 pst = do
       se <- lift $ do
+        modifyTVar' fi.searchRequestCounter (1 +)
         modifyTVar' fi.queryCache (LRU.insert (unwords ps) now)
         readTVar fi.searchEngine
       $(logInfo) $ "Search flakes by " <> show pst

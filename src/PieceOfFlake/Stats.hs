@@ -69,8 +69,8 @@ instance ReadTVar (TVar a) (Ydentity a) where
 type RepoStats = RepoStatsF Ydentity
 
 
-renderRepoStats :: Integer -> RepoStatsF Ydentity -> p -> MarkupM ()
-renderRepoStats searchRequests rs =
+renderRepoStats :: Integer -> Int -> Tagged "fetch" Int -> RepoStatsF Ydentity -> p -> MarkupM ()
+renderRepoStats searchRequests idxQueueLen (Tagged fetchQueueLen) rs =
  [hamlet|
         <h1 class="title is-4 mb-3">
           Repository stats
@@ -94,4 +94,10 @@ renderRepoStats searchRequests rs =
             <tr>
               <td>Indexed Flakes
               <td>#{rs.indexedFlakes}
+            <tr>
+              <td>Fetch Queue
+              <td>#{fetchQueueLen}
+            <tr>
+              <td>Index Queue
+              <td>#{idxQueueLen}
         |]

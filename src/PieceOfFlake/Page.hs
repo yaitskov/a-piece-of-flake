@@ -18,7 +18,7 @@ import PieceOfFlake.Flake
       PackageInfo(broken, name, description, license, unfree) )
 import PieceOfFlake.Flake.Repo
 
-import PieceOfFlake.Index ( findFlakes, listQueryCache, FlakeIndex (searchRequestCounter) )
+import PieceOfFlake.Index ( findFlakes, listQueryCache, FlakeIndex (searchRequestCounter, indexerQueueLen) )
 import PieceOfFlake.Prelude hiding (Map, error, pi, Handler)
 import PieceOfFlake.Stats
 import PieceOfFlake.Th ( includeFile )
@@ -100,25 +100,28 @@ getStatsR :: Handler Html
 getStatsR = do
   Ypp { repo } <- getYesod
   queries <- listQueryCache repo.flakeIndex
+  fetchQueueLen <- Tagged @"fetch" <$> readTVarIO repo.fetcherQueueLen
+  idxQueueLen <- readTVarIO repo.flakeIndex.indexerQueueLen
   searchReq <- readTVarIO repo.flakeIndex.searchRequestCounter
-  rs <- atomically  $ greadTraVar repo.repoStats
+  rs <- atomically $ greadTraVar repo.repoStats
   bulmaLayout $ do
     setTitle "Stats"
     metaTags
     navBar
     [whamlet|
             <section class="section pt-5">
-              ^{renderRepoStats searchReq rs}
+              ^{renderRepoStats searchReq idxQueueLen fetchQueueLen rs}
               <h2 class="title is-4 mb-3">
                 Popular Queries
               $if null queries
                 <div class="notification is-warning">
                   No queries
               $else
-                <ul class=content>
-                  $forall q <- queries
-                    <li>
-                      #{q}
+                <div class=content>
+                  <ul>
+                    $forall q <- queries
+                      <li>
+                        #{q}
             |]
 
 getSearchR :: Handler Html

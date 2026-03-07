@@ -42,11 +42,11 @@ mkFlakeRepo :: MonadIO m =>
   FlakeIndex ->
   Map FlakeUrl Flake ->
   AcidState AcidFlakes ->
+  RepoStatsF TVar ->
   m FlakeRepo
-mkFlakeRepo fetSec cmdA fi flakesMap acidFlakeStorage = do
+mkFlakeRepo fetSec cmdA fi flakesMap acidFlakeStorage rs = do
   liftIO $
-    FlakeRepo flakesMap fetSec fi cmdA acidFlakeStorage <$>
-      mkRepoStats <*>
+    FlakeRepo flakesMap fetSec fi cmdA acidFlakeStorage rs <$>
       newIO <*>
       newTQueueIO <*>
       newTVarIO 0 <*>
@@ -72,8 +72,11 @@ trySubmitFlakeToRepo ip fr fu = do
       if ql > 1000
         then pure $ Left "Submition Queue is full"
         else do
-          lift $ modifyTVar' fr.fetcherQueueLen (1 +)
-          lift $ writeTQueue fr.fetcherQueue $ Just fu
+          lift $ do
+            modifyTVar' fr.repoStats.submittedFlakes (1 +)
+            modifyTVar' fr.repoStats.totalFlakeUploadsSinceRestart (1 +)
+            modifyTVar' fr.fetcherQueueLen (1 +)
+            writeTQueue fr.fetcherQueue $ Just fu
           fql <- lift $ readTVar fr.fetcherQueueLen
           $(logInfo) $ "Fetcher queue increased to " <> P.show fql
           let f = SubmittedFlake fu now ip in do
@@ -101,7 +104,10 @@ popFlakeSubmitionStm ftid fr now = do
       lift (lookup fu fr.flakes) >>= \case
         Just (SubmittedFlake { flakeUrl })
           | flakeUrl == fu -> do
-            lift $ insert (FlakeIsBeingFetched flakeUrl now ftid) fu fr.flakes
+            lift $ do
+              modifyTVar' fr.repoStats.submittedFlakes (flip (-) 1)
+              modifyTVar' fr.repoStats.fetchingFlakes (1 +)
+              insert (FlakeIsBeingFetched flakeUrl now ftid) fu fr.flakes
             pure $ Just flakeUrl
           | otherwise -> do
             $(logError) $ "Error flake url mismatch " <> P.show fu <> " <> " <> P.show flakeUrl
@@ -139,12 +145,18 @@ addFetchedFlake fr ftid (fu, fetchedFlake) = do
           | fu == exFu ->
             case fetchedFlake of
               Left e -> do
-                lift $ insert (BadFlake fu now e) fu fr.flakes
+                lift $ do
+                  modifyTVar' fr.repoStats.fetchingFlakes (flip (-) 1)
+                  modifyTVar' fr.repoStats.badFlakes (1 +)
+                  insert (BadFlake fu now e) fu fr.flakes
                 $(logInfo) $ "Fetching flake " <> P.show fu <> " failed in " <> P.show (duration now past)
 
               Right meta -> do
                 let f = FlakeFetched fu now meta
-                lift $ insert f fu fr.flakes
+                lift $ do
+                  modifyTVar' fr.repoStats.fetchingFlakes (flip (-) 1)
+                  modifyTVar' fr.repoStats.fetchedFlakes (1 +)
+                  insert f fu fr.flakes
                 $(logInfo) $ "Flake " <> P.show fu <> " is fetched in " <> P.show (duration now past)
                 lift $ writeTQueue fr.acidQueue (fu, f)
                 indexNewFlake fr.flakeIndex fu
