@@ -22,6 +22,8 @@ data RawNixCacheOutput
 data BaseUrl
 data NoSubmitionHeartbeatSec
 data ResubmitPeriod
+type IndexQueryCacheSize = "index-query-cache-size"
+
 newtype FetcherSecret = FetcherSecret Text deriving (Eq, Generic, FromJSON, ToJSON)
 instance Show FetcherSecret where
   show _ = "****"
@@ -38,6 +40,7 @@ data WsCmdArgs
     , noSubmitionHeartbeat :: Tagged NoSubmitionHeartbeatSec Second
     , allowResubmitBadFlakeIn :: Tagged ResubmitPeriod NominalDiffTime
     , logLevel :: LogLevel
+    , indexQueryCacheSize :: Tagged IndexQueryCacheSize Word
     }
   deriving Show
 
@@ -68,7 +71,7 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
     serviceP = WebService <$> (WsCmdArgs <$> portOption <*> certO <*>
       certKeyO <*> acidOption <*> cacheSecondsO <*>
       baseUrlO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
-      allowResubmitBadFlakeInO <*> logLevelO)
+      allowResubmitBadFlakeInO <*> logLevelO <*> indexQueryCacheSizeO)
     fetcherP = FetcherJob <$> (FetcherCmdArgs <$> urlOption <*> rawNixCacheO <*>
       customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
       rawNixCacheMaxAgeO @RawNixCacheMaxAge (7 * 24 * 3600) <*>
@@ -129,6 +132,14 @@ noSubmitionHeartbeatO = Tagged <$>
     <> metavar "HEARTBEAT"
   )
 
+indexQueryCacheSizeO :: Parser (Tagged IndexQueryCacheSize Word)
+indexQueryCacheSizeO = Tagged <$>
+  option auto
+  ( long (symbolVal $ Proxy @IndexQueryCacheSize)
+    <> showDefault
+    <> value 100
+    <> help "index query cache size"
+  )
 cacheSecondsO :: Parser (Tagged StaticCacheSeconds Word32)
 cacheSecondsO = Tagged <$>
   option auto

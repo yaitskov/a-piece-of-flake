@@ -2,7 +2,11 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 module PieceOfFlake.Index where
 
+import Data.HashPSQ qualified as PSQ
 import Data.Map.Strict qualified as M
+import Data.LruCache qualified as LRU
+import Data.LruCache.Internal qualified as LRU
+import Data.LruCache (LruCache)
 import Data.SearchEngine
     ( Term,
       SearchConfig(documentFeatureValue, SearchConfig, documentKey,
@@ -28,12 +32,30 @@ import PieceOfFlake.Flake
       MetaFlake(hasNixOsModules, description, packages),
       isIndexed,
       repoOfFlakeUrl )
-
+import PieceOfFlake.CmdArgs ( IndexQueryCacheSize )
 import PieceOfFlake.Prelude hiding (pi, Map)
-import PieceOfFlake.Stm ( readTQueue, TQueue, atomicalog )
+import PieceOfFlake.Stm
+    ( readTQueue, writeTQueue, TQueue, newTQueueIO, atomicalog )
 import StmContainers.Map ( insert, listTNonAtomic, lookup, Map )
 
-type FlakeIndex = SearchEngine (FlakeUrl, MetaFlake) FlakeUrl () ()
+type FlakeSearchEngine = SearchEngine (FlakeUrl, MetaFlake) FlakeUrl () ()
+
+data FlakeIndex
+  = FlakeIndex
+  { searchEngine :: TVar FlakeSearchEngine
+  , indexerQueue :: TQueue FlakeUrl
+  , indexerQueueLen :: TVar Int
+  , queryCache :: TVar (LruCache Text UTCTime)
+  }
+
+mkFlakeIndex :: MonadIO m => Tagged IndexQueryCacheSize Word -> m FlakeIndex
+mkFlakeIndex (Tagged cs) = do
+  liftIO $
+    FlakeIndex <$>
+      newTVarIO emptySearchEngine <*>
+      newTQueueIO <*>
+      newTVarIO 0 <*>
+      newTVarIO (LRU.empty $ fromIntegral cs)
 
 packageInfoToTerms :: PackageInfo -> [Term]
 packageInfoToTerms pi =
@@ -51,8 +73,8 @@ extractTerms (fu, mf) () =
   <> (concatMap packageInfoToTerms .  concatMap M.elems $ M.elems mf.packages)
   <> memptyIfFalse mf.hasNixOsModules ["nixosModules"]
 
-emptyFlakeIndex :: FlakeIndex
-emptyFlakeIndex =
+emptySearchEngine :: FlakeSearchEngine
+emptySearchEngine =
   initSearchEngine
     SearchConfig
     { documentKey = fst
@@ -72,20 +94,28 @@ emptyFlakeIndex =
     , paramAutosuggestPostfilterLimit = 10
     }
 
-consumeIndexQueue :: PoF m => Map FlakeUrl Flake -> TQueue FlakeUrl -> TVar Int -> TVar FlakeIndex -> m ()
-consumeIndexQueue fs q qlen fi = do
+consumeIndexQueue :: PoF m => Map FlakeUrl Flake -> FlakeIndex -> m ()
+consumeIndexQueue fs fi = do
   now <- liftIO getCurrentTime
   atomicalog $ do
     $(logInfo) "Wait for flakes to index for full text search"
-    fu <- lift $ readTQueue q
-    lift $ modifyTVar' qlen (\x -> x - 1)
-    ql <- lift $ readTVar qlen
+    fu <- lift $ readTQueue fi.indexerQueue
+    lift $ modifyTVar' fi.indexerQueueLen (\x -> x - 1)
+    ql <- lift $ readTVar fi.indexerQueueLen
     $(logInfo) $ "Start index flake " <> show fu <> "; index queue " <> show ql
     lift (lookup fu fs) >>= \case
       Nothing -> $(logError) $ "Flake " <> show fu <> " is missing"
       Just f -> indexFlake now fi fs f
 
-indexFlake :: (MonadLogger (t STM), MonadTrans t) => UTCTime -> TVar FlakeIndex -> Map FlakeUrl Flake -> Flake -> t STM ()
+indexNewFlake :: (MonadLogger (t STM), MonadTrans t) => FlakeIndex -> FlakeUrl -> t STM ()
+indexNewFlake fi fu = do
+  iql <- lift $ do
+    writeTQueue fi.indexerQueue fu
+    modifyTVar' fi.indexerQueueLen (1 +)
+    readTVar fi.indexerQueueLen
+  $(logInfo) $ "Indexer queue increased to " <> show iql
+
+indexFlake :: (MonadLogger (t STM), MonadTrans t) => UTCTime -> FlakeIndex -> Map FlakeUrl Flake -> Flake -> t STM ()
 indexFlake now fi fs f =
   case f of
    ff@FlakeFetched { flakeUrl } ->
@@ -95,12 +125,12 @@ indexFlake now fi fs f =
        do
          lift $ do
            insert ixf fu fs
-           modifyTVar' fi (insertDoc (fu, ff.meta))
+           modifyTVar' fi.searchEngine (insertDoc (fu, ff.meta))
          $(logInfo) $ "Finished index flake " <> show fu
    _nff -> $(logError) $ "Flake " <> show f.flakeUrl <> " is not in the fetched state"
 
 loadIndexFromScratch ::
-  PoF m => TVar FlakeIndex -> Map FlakeUrl Flake -> [(FlakeUrl, Flake)] -> m ()
+  PoF m => FlakeIndex -> Map FlakeUrl Flake -> [(FlakeUrl, Flake)] -> m ()
 loadIndexFromScratch fi fsm fs = do
   now <- liftIO getCurrentTime
   atomicalog $ do
@@ -120,20 +150,25 @@ data FlakeSearchReq
 
 instance FromJSON FlakeSearchReq
 
-alt :: [a] -> [a] -> [a]
-alt a b = case a of [] -> b ; o -> o
+listQueryCache :: PoF m => FlakeIndex -> m [ Text ]
+listQueryCache fi =
+  reverse . fmap (^._1) . sortWith (^._2) . PSQ.toList . LRU.lruQueue <$> readTVarIO fi.queryCache
 
 findFlakes :: PoF m =>
-  Map FlakeUrl Flake -> TVar FlakeIndex -> FlakeSearchReq -> m [ FlakeUrl ]
-findFlakes fs tfi FlakeSearchReq { searchPattern = ps } =
+  Map FlakeUrl Flake -> FlakeIndex -> FlakeSearchReq -> m [ FlakeUrl ]
+findFlakes fs fi FlakeSearchReq { searchPattern = ps } =
   case concatMap tokenize ps of
     [] -> justLoadFirstNFlakes fs 30
-    pst@(t1:_) -> atomicalog (fromIdx t1 pst)
+    pst@(t1:_) -> do
+      now <- getCurrentTime
+      atomicalog (fromIdx now t1 pst)
   where
-    fromIdx t1 pst = do
-      fi <- lift $ readTVar tfi
+    fromIdx now t1 pst = do
+      se <- lift $ do
+        modifyTVar' fi.queryCache (LRU.insert (unwords ps) now)
+        readTVar fi.searchEngine
       $(logInfo) $ "Search flakes by " <> show pst
-      let r  = query fi pst `alt` (fmap fst . snd $ queryAutosuggest fi NoFilter [] t1)
+      let r  = query se pst `alt` (fmap fst . snd $ queryAutosuggest se NoFilter [] t1)
       $(logInfo) $ "Found " <> show (length r) <> " by " <> show ps
       pure r
 

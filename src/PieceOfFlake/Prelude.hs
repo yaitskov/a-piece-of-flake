@@ -5,9 +5,11 @@ module PieceOfFlake.Prelude
   , toMs
   , PoF
   , getCurrentTime
+  , alt
   ) where
 
 import Control.Exception as X (IOException)
+import Control.Lens as X ((^.), _2, _1)
 import Control.Monad.Catch as X (Handler (..))
 import Control.Monad.Logger as X
 import Data.Aeson as X ( FromJSON, ToJSON )
@@ -34,3 +36,6 @@ type PoF m = (MonadLogger m, MonadIO m, MonadUnliftIO m)
 
 getCurrentTime :: MonadIO m => m UTCTime
 getCurrentTime = liftIO C.getCurrentTime
+
+alt :: [a] -> [a] -> [a]
+alt a b = case a of [] -> b ; o -> o

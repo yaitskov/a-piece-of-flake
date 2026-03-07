@@ -23,7 +23,7 @@ import PieceOfFlake.Flake.Repo
       popFlakeSubmition,
       addFetchedFlake,
       validateRawFlakeUrl )
-import PieceOfFlake.Index ( findFlakes )
+import PieceOfFlake.Index ( findFlakes, listQueryCache )
 import PieceOfFlake.Prelude hiding (Map, error, pi, Handler)
 import PieceOfFlake.Th ( includeFile )
 import PieceOfFlake.Yesod
@@ -52,6 +52,7 @@ mkYesod "Ypp" [parseRoutes|
 /sitemap.xml SiteMapR GET
 / HomeR GET
 /search SearchR GET
+/stats StatsR GET
 /flake/#FlakeUrl FlakeR GET
 /publication PublicationR GET
 /favicon.svg FaviconR GET
@@ -98,6 +99,28 @@ getRobotsR = sendStaticBs typePlain $(includeFile "assets/robots.txt")
 getAppJsR = sendStaticBs typeJavascript $(includeFile "assets/app.js")
 getStyleR = sendStaticBs typeCss $(includeFile "assets/style.css")
 getBulmaR = sendStaticBs typeCss $(includeFile "assets/bulma.min.css")
+
+getStatsR :: Handler Html
+getStatsR = do
+  Ypp { repo } <- getYesod
+  queries <- listQueryCache repo.flakeIndex
+  bulmaLayout $ do
+    setTitle "Stats"
+    metaTags
+    navBar
+    [whamlet|
+            <section class="section pt-5">
+              <h1 class="title is-4 mb-3">
+                Popular Queries
+              $if null queries
+                <div class="notification is-warning">
+                  No queries
+              $else
+                <ul class=content>
+                  $forall q <- queries
+                    <li>
+                      #{q}
+            |]
 
 getSearchR :: Handler Html
 getSearchR =
@@ -175,8 +198,6 @@ getPublicationR =
             |]
 
 -- getAboutR :: Handler Html
--- getStatsR :: Handler Html
--- getStatsR = do
 --                 <center>
 --               <p>
 --                 <a href="https://github.com/yaitskov/a-piece-of-flake">
@@ -318,7 +339,7 @@ getFlakeR fu = do
         FlakeFetched { flakeUrl, uploadedAt, meta} ->
           let
             ps :: [PackageInfo] = concatMap elems (elems meta.packages)
-            pkgWgs p = mapM_ (\ff -> ff p) (packageInfoToWidget <$> ps) in
+          in
              [hamlet|
                <table class=table>
                  <tbody>
@@ -343,12 +364,17 @@ getFlakeR fu = do
                        #{Ts uploadedAt}
                <h6 class="title is-6 mb-3">
                  Packages
-               ^{pkgWgs}
+               $if null ps
+                 <div class="notification is-warning">
+                   No packages
+               $else
+                 $forall p <- ps
+                   ^{packageInfoToWidget p}
                    |]
         FlakeIndexed  { flakeUrl, indexedAt, meta} ->
           let
             ps :: [PackageInfo] = concatMap elems (elems meta.packages)
-            pkgWgs p = mapM_ (\ff -> ff p) (packageInfoToWidget  <$> ps) in
+          in
              [hamlet|
                <table class=table>
                  <tbody>
@@ -383,7 +409,12 @@ getFlakeR fu = do
 
                <h4 class="title is-4 mb-3">
                  Packages
-               ^{pkgWgs}
+               $if null ps
+                 <div class="notification is-warning">
+                   No packages
+               $else
+                 $forall p <- ps
+                   ^{packageInfoToWidget p}
                    |]
 
 packageInfoToWidget :: PackageInfo -> p -> MarkupM ()
@@ -429,6 +460,9 @@ navBar = do
                  Publish
                <a class="navbar-item" href=@{SearchR}>
                  Search
+               <a class="navbar-item" href=@{StatsR}>
+                 Stats
+
          |]
 
 postSubmitFlakeR :: Handler Flake

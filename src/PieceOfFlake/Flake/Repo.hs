@@ -14,7 +14,7 @@ import PieceOfFlake.Flake
       MetaFlake,
       RawFlakeUrl(..) )
 import PieceOfFlake.CmdArgs
-import PieceOfFlake.Index ( FlakeIndex )
+import PieceOfFlake.Index
 import PieceOfFlake.Prelude hiding (Map, show)
 import PieceOfFlake.Prelude qualified as P
 import PieceOfFlake.Stm ( newTQueueIO, readTQueue, writeTQueue, TQueue, atomicalog )
@@ -25,33 +25,28 @@ data FlakeRepo
   = FlakeRepo
   { flakes :: Map FlakeUrl Flake
   , fetcherSecret :: FetcherSecret
+  , flakeIndex :: FlakeIndex
   , wsArgs :: WsCmdArgs
   , acidFlakes :: AcidState AcidFlakes
   , fetcherIps :: Map FetcherId IpAdr
   , fetcherQueue :: TQueue (Maybe FlakeUrl)
-  , indexerQueue :: TQueue FlakeUrl
   , fetcherQueueLen :: TVar Int
-  , indexerQueueLen :: TVar Int
-  , flakeIndex :: TVar FlakeIndex
   , acidQueue :: TQueue (FlakeUrl, Flake)
   }
 
 mkFlakeRepo :: MonadIO m =>
   FetcherSecret ->
   WsCmdArgs ->
-  TVar FlakeIndex ->
+  FlakeIndex ->
   Map FlakeUrl Flake ->
   AcidState AcidFlakes ->
   m FlakeRepo
 mkFlakeRepo fetSec cmdA fi flakesMap acidFlakeStorage = do
   liftIO $
-    FlakeRepo flakesMap fetSec cmdA acidFlakeStorage <$>
+    FlakeRepo flakesMap fetSec fi cmdA acidFlakeStorage <$>
       newIO <*>
       newTQueueIO <*>
-      newTQueueIO <*>
       newTVarIO 0 <*>
-      newTVarIO 0 <*>
-      pure fi <*>
       newTQueueIO
 
 trySubmitFlakeToRepo :: PoF m => IpAdr -> FlakeRepo -> FlakeUrl -> m (Either Text Flake)
@@ -148,11 +143,8 @@ addFetchedFlake fr ftid (fu, fetchedFlake) = do
                 let f = FlakeFetched fu now meta
                 lift $ insert f fu fr.flakes
                 $(logInfo) $ "Flake " <> P.show fu <> " is fetched in " <> P.show (duration now past)
-                lift $ writeTQueue fr.indexerQueue fu
                 lift $ writeTQueue fr.acidQueue (fu, f)
-                lift $ modifyTVar' fr.indexerQueueLen (1 +)
-                iql <- lift $ readTVar fr.indexerQueueLen
-                $(logInfo) $ "Indexer queue increased to " <> P.show iql
+                indexNewFlake fr.flakeIndex fu
           | otherwise ->
               $(logError) $ "Error flake url mismatch " <> P.show fu <> " <> " <> P.show exFu
         Just ufs ->

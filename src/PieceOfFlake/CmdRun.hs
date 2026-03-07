@@ -9,12 +9,7 @@ import PieceOfFlake.Acid
 import PieceOfFlake.CmdArgs
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
-    ( FlakeRepo(indexerQueueLen, flakeIndex, flakes, acidFlakes,
-                acidQueue, indexerQueue),
-      mkFlakeRepo,
-      sendEmtpyFlakeSubmition )
 import PieceOfFlake.Index
-    ( consumeIndexQueue, emptyFlakeIndex, loadIndexFromScratch )
 import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req ( setResponseTimeout )
@@ -75,7 +70,7 @@ runPlain = runSettings
 initRepo :: PoF m => FetcherSecret -> WsCmdArgs -> m FlakeRepo
 initRepo fsec wsa = do
   flakesMap <- liftIO newIO
-  fi <- newTVarIO emptyFlakeIndex
+  fi <- mkFlakeIndex wsa.indexQueryCacheSize
   acidFlakeStorage <- openFlakeDb wsa.acidFlakes
   loadIndexFromScratch fi flakesMap . reverse =<< loadFromDb acidFlakeStorage
   mkFlakeRepo fsec wsa fi flakesMap acidFlakeStorage
@@ -93,7 +88,7 @@ launchBackgroundThreads period fr = do
         Right () -> $(logInfo) "Flake Persistence thread ended without errors")
   $(logInfo) $ "Flake persistence thread is forked " <> show persisFlakeTid
   idxFlakeTid <- forkFinally
-    (forever $ consumeIndexQueue fr.flakes fr.indexerQueue fr.indexerQueueLen fr.flakeIndex)
+    (forever $ consumeIndexQueue fr.flakes fr.flakeIndex)
     (\case
         Left e -> $(logError) $ "Flake text search indexer thread ended: " <> show e
         Right () -> $(logInfo) "Flake text search indexer thread without errors")
