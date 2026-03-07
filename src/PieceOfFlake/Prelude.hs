@@ -4,18 +4,22 @@ module PieceOfFlake.Prelude
   , readFileTxt
   , toMs
   , PoF
+  , getCurrentTime
   ) where
 
+import Control.Exception as X (IOException)
 import Control.Monad.Catch as X (Handler (..))
 import Control.Monad.Logger as X
 import Data.Aeson as X ( FromJSON, ToJSON )
-import Data.Time.Clock as X
+import Data.Time.Clock as X hiding (getCurrentTime)
+import Data.Time.Clock qualified as C
 import Data.Tagged as X
+import GHC.TypeLits as X (symbolVal)
 import Relude as X hiding (Handle, intercalate)
 import Debug.TraceEmbrace as X hiding (PackageName, Error, a)
 import System.IO.Unsafe as X (unsafePerformIO)
 import Data.Time.Units as X
-import UnliftIO as X (MonadUnliftIO, finally, catchAny, stringException, throwIO)
+import UnliftIO as X (MonadUnliftIO, finally, catchAny, catch, stringException, throwIO)
 
 duration :: UTCTime -> UTCTime -> Double
 duration a b = realToFrac $ diffUTCTime a b
@@ -27,3 +31,6 @@ toMs :: TimeUnit a => a -> Int
 toMs = fromIntegral . toMicroseconds
 
 type PoF m = (MonadLogger m, MonadIO m, MonadUnliftIO m)
+
+getCurrentTime :: MonadIO m => m UTCTime
+getCurrentTime = liftIO C.getCurrentTime

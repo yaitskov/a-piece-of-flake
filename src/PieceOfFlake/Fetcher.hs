@@ -14,7 +14,7 @@ import Data.ByteString.Char8 qualified as BS8
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as M
 import Data.Text qualified as T
-import PieceOfFlake.CmdArgs ( RawNixCacheOutput, FetcherSecret )
+import PieceOfFlake.CmdArgs
 import PieceOfFlake.Flake
 import PieceOfFlake.Flake.Repo ( FetcherReq(FetcherReq) )
 import PieceOfFlake.Prelude
@@ -26,8 +26,8 @@ import UnliftIO.Retry
       limitRetries,
       recoverAll,
       recovering )
+
 import UnliftIO.Directory
-    ( doesFileExist, createDirectoryIfMissing )
 import System.FilePath ( (</>) )
 
 
@@ -50,57 +50,81 @@ newtype ReadJsonCached = ReadJsonCached FilePath
     by that path create files out.json and cmd.sh
 -}
 
-readJsonCached :: (FromJSON a, MonadIO m) => FilePath -> Text -> [Text] -> m a
+isFileOlderThan :: MonadIO m => Tagged a FilePath -> Tagged a NominalDiffTime -> m Bool
+isFileOlderThan (Tagged fp) (Tagged age) =
+  liftA2 (>)
+    (addUTCTime (age * (-1)) <$> getCurrentTime)
+    $ getModificationTime fp
+
+readJsonCached :: (FromJSON a, FetcherM m) => FilePath -> Text -> [Text] -> m a
 readJsonCached cacheDir prg prgArgs = do
   let cmd = LBS.intercalate " " (encodeUtf8 <$> (prg : prgArgs))
       (cmdH2, cmdHashRest) = splitAt 2 $ showDigest $ hashlazy cmd
       callDir = cacheDir </> cmdH2 </> cmdHashRest
-      outJson = callDir </> "out.json"
+      exOut = Tagged @RawNixCacheErrorMaxAge $ callDir </> "err.txt"
+      outJson = Tagged @RawNixCacheMaxAge $ callDir </> "out.json"
       cmdFile = callDir </> "cmd.sh"
-  putLBSLn $ "readJsonCached " <> cmd
-  outJsonExist <- doesFileExist outJson
-  if outJsonExist
-    then do
-      jsonLbs <- readFileBS outJson
-      case eitherDecodeStrict jsonLbs of
-        Right x -> pure x
-        Left e ->
-          throwIO . stringException $
-          "Failed to parse output as JSON:\n" <> show jsonLbs <> "\nFrom: " <>
-          toString (T.intercalate " " prgArgs)  <> "\nError: " <> e
-    else do
-      prgOut <- liftIO (readProcess (toString prg) (toString <$> prgArgs) "")
-      let prgOutBs = encodeUtf8 prgOut
-      case eitherDecodeStrict prgOutBs  of
-        Right x -> do
-          createDirectoryIfMissing True callDir
-          writeFileBS outJson prgOutBs
-          writeFileLBS cmdFile cmd
-          pure x
-        Left e ->
-          throwIO . stringException $
-          "Failed to parse output as JSON:\n" <> prgOut <> "\nFrom: " <>
-          toString (T.intercalate " " prgArgs)  <> "\nError: " <> e
+      doDirect = do
+        $(logDebug) $ "Direct read " <> show cmd
+        createDirectoryIfMissing True callDir
+        prgOut <- catch
+          (liftIO (readProcess (toString prg) (toString <$> prgArgs) ""))
+          (\(e :: IOException) -> do
+            writeFileBS (untag exOut) $ encodeUtf8 (show e :: Text)
+            throwIO e)
+        let prgOutBs = encodeUtf8 prgOut
+        writeFileBS (untag outJson) prgOutBs
+        writeFileLBS cmdFile cmd
+        case eitherDecodeStrict prgOutBs  of
+          Right x -> do
+            pure x
+          Left e ->
+            throwIO . stringException $
+            "Failed to parse output as JSON:\n" <> prgOut <> "\nFrom: " <>
+            toString (T.intercalate " " prgArgs)  <> "\nError: " <> e
+
+  $(logInfo) $ "readJsonCached " <> show cmd
+  ifM (doesFileExist $ untag exOut)
+    (do
+      $(logDebug) $ "Ex cache exist for " <> show cmd
+      ifM (isFileOlderThan exOut . rawNixCacheErrMaxAge =<< asks fetcherArgs)
+        (do $(logDebug) $ "Ex cache is expired for " <> show cmd
+            removeFile $ untag exOut
+            doDirect)
+        (throwIO . stringException . show =<< readFileBS (untag exOut))
+    )
+    (ifM (doesFileExist $ untag outJson)
+      (do
+          $(logDebug) $ "Out cache exist for " <> show cmd
+          ifM (isFileOlderThan outJson . rawNixCacheMaxAge =<< asks fetcherArgs)
+            doDirect
+            (do
+              $(logDebug) $ "Read cache from: " <> show outJson
+              jsonLbs <- readFileBS $ untag outJson
+              case eitherDecodeStrict jsonLbs of
+                Right x -> pure x
+                Left e ->
+                  throwIO . stringException $
+                  "Failed to parse output as JSON:\n" <> show jsonLbs <> "\nFrom: " <>
+                  toString (T.intercalate " " prgArgs)  <> "\nError: " <> e
+            )
+      )
+      doDirect
+    )
 
 data FetcherConf
   = FetcherConf
   { fetUrl :: DynamicUrl
   , arch :: Architecture
-  , nixCache :: Tagged RawNixCacheOutput (Maybe FilePath)
-  , fetcherId :: FetcherId
   , fetcherSecret :: FetcherSecret
+  , fetcherArgs :: FetcherCmdArgs
   }
 
-type FetcherM m =
-  ( MonadReader FetcherConf m
-  , MonadIO m
-  , MonadUnliftIO m
-  , MonadLogger m
-  )
+type FetcherM m = (MonadReader FetcherConf m, PoF m)
 
 readJson :: (FetcherM m, FromJSON a) => Text -> [Text] -> m a
 readJson prg prgArgs = do
-  asks nixCache >>= \case
+  asks fetcherArgs <&> rawNixCache >>= \case
     Tagged Nothing -> readJsonDirect prg prgArgs
     Tagged (Just c) -> readJsonCached c prg prgArgs
 
@@ -228,7 +252,7 @@ uploadFlakeAndFetch :: (FetcherM m) =>
   -> m ()
 uploadFlakeAndFetch f = do
   fctx <- ask
-  let fetr = FetcherReq fctx.fetcherId f fctx.fetcherSecret
+  let fetr = FetcherReq fctx.fetcherArgs.fetcherId f fctx.fetcherSecret
       rqb = ReqBodyJson fetr
   $(logDebug) $ "sending " <> show fetr
   jr <- recovering
@@ -264,18 +288,13 @@ uploadFlakeAndFetch f = do
     go fu =
       uploadFlakeAndFetch . Just . (fu,) . Right =<< metaFlakeFromUrl fu
 
-runFetcher :: (MonadLogger m, MonadUnliftIO m) =>
-  DynamicUrl ->
-  Tagged RawNixCacheOutput (Maybe FilePath) ->
-  FetcherId ->
-  FetcherSecret ->
-  m ()
-runFetcher serviceUrl rawNixCa fid fsec = do
-  $(logInfo) $ "Fetcher " <> show fid <> " started for " <> show serviceUrl
+runFetcher :: PoF m => DynamicUrl -> FetcherCmdArgs -> FetcherSecret -> m ()
+runFetcher serviceUrl fa fsec = do -- rawNixCa fid fsec = do
+  $(logInfo) $ "Fetcher " <> show fa.fetcherId <> " started for " <> show serviceUrl
   ca <- nixCurrentArch
   forever $ do
     recoverAll
       (capDelay (toMs (6 :: Second)) (fibonacciBackoff (toMs (1 :: Second))))
       (\_ ->
          runReaderT (uploadFlakeAndFetch Nothing)
-           $ FetcherConf serviceUrl ca rawNixCa fid fsec)
+           $ FetcherConf serviceUrl ca fsec fa)

@@ -23,7 +23,6 @@ import PieceOfFlake.Flake.Repo
       popFlakeSubmition,
       addFetchedFlake,
       validateRawFlakeUrl )
-
 import PieceOfFlake.Index ( findFlakes )
 import PieceOfFlake.Prelude hiding (Map, error, pi, Handler)
 import PieceOfFlake.Th ( includeFile )
@@ -451,7 +450,7 @@ postFetchNewFlakeSubmitionsR = do
     FetcherReq fetcherId Nothing fsec -> verifyFetcher fsec $ do
       $(logDebug) "Just Fetch next FlakeUrl"
       r <- popFlakeSubmition repo fetcherId
-      putBSLn $ toStrict $ encode r <> " :: Maybe Flake  <-> "  <> show r
+      $(logDebug) $ show $ encode r <> " :: Maybe Flake  <-> "  <> show r
       pure r
     FetcherReq fetcherId (Just fetchedFlake) fsec -> verifyFetcher fsec $ do
         $(logInfo) $ "Fetcher returned " <> show fetchedFlake

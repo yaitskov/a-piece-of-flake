@@ -1,3 +1,4 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 module PieceOfFlake.CmdRun where
 
@@ -6,16 +7,6 @@ import Language.Haskell.TH.Syntax (qLocation)
 import PieceOfFlake.Acid
     ( loadFromDb, openFlakeDb, runPersistQueue )
 import PieceOfFlake.CmdArgs
-    ( CmdArgs(..),
-      FetcherCmdArgs(FetcherCmdArgs),
-      WsCmdArgs(keyFile, acidFlakes, httpPortToListen, logLevel,
-                fetcherSecretPath, noSubmitionHeartbeat, staticCache, baseUrl,
-                certFile),
-      FetcherSecret(..),
-      NoSubmitionHeartbeatSec,
-      CertKey,
-      Cert )
-
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
     ( FlakeRepo(indexerQueueLen, flakeIndex, flakes, acidFlakes,
@@ -131,11 +122,11 @@ runCmd = \case
         case liftA2 mkTlsSettings ws.certFile ws.keyFile of
           Nothing -> runPlain (mkSettings y ws logger) =<< toWaiApp y
           Just tlsSngs -> runTLS tlsSngs (mkSettings y ws logger) =<< toWaiApp y
-  FetcherJob fa@(FetcherCmdArgs serUrl rawNixCache fid fSecPath reqTimeout miLogLevel) ->
-    let serUrl' = (setResponseTimeout serUrl $ untag reqTimeout) in
-      withLogs miLogLevel $ do
+  FetcherJob fa@FetcherCmdArgs {} -> -- serUrl rawNixCache fid fSecPath reqTimeout miLogLevel) ->
+    let serUrl' = (setResponseTimeout fa.webServiceUrl $ untag fa.noSubmitionHeartbeat) in -- reqTimeout) in
+      withLogs fa.logLevel $ do
         $(logInfo) $ "Start Fetcher "  <> show fa
-        runFetcher serUrl' rawNixCache fid =<< loadFetcherSecret fSecPath
+        runFetcher serUrl' fa =<< loadFetcherSecret fa.fetcherSecretPath
 
   PieceOfFlakeVersion ->
     putStrLn $ "Version " <> showVersion version

@@ -10,6 +10,7 @@ import PieceOfFlake.Prelude qualified as P
 import PieceOfFlake.Req
     ( DynamicUrl(UrlHttp), http, port, parseUrl )
 import Text.Show ( Show(show) )
+import GHC.TypeLits (KnownSymbol)
 
 
 data HttpPort
@@ -40,6 +41,8 @@ data WsCmdArgs
     }
   deriving Show
 
+type RawNixCacheMaxAge = "nix-cache-max-age"
+type RawNixCacheErrorMaxAge = "nix-cache-err-max-age"
 data FetcherCmdArgs
   = FetcherCmdArgs
     { webServiceUrl :: DynamicUrl
@@ -47,15 +50,17 @@ data FetcherCmdArgs
     , fetcherId :: FetcherId
     , fetcherSecretPath :: Tagged FetcherSecret FilePath
     , noSubmitionHeartbeat :: Tagged NoSubmitionHeartbeatSec Second
+    , rawNixCacheMaxAge :: Tagged RawNixCacheMaxAge NominalDiffTime
+    , rawNixCacheErrMaxAge :: Tagged RawNixCacheErrorMaxAge NominalDiffTime
     , logLevel :: LogLevel
     }
-  deriving Show
+  deriving (Show)
 
 data CmdArgs
   = WebService WsCmdArgs
   | FetcherJob FetcherCmdArgs
   | PieceOfFlakeVersion
-  deriving Show
+  deriving (Show)
 
 execWithArgs :: MonadIO m => (CmdArgs -> m a) -> [String] -> m a
 execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPrefs (info (cmdp <**> helper) phelp) args)
@@ -65,7 +70,10 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
       baseUrlO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
       allowResubmitBadFlakeInO <*> logLevelO)
     fetcherP = FetcherJob <$> (FetcherCmdArgs <$> urlOption <*> rawNixCacheO <*>
-      customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*> logLevelO)
+      customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
+      rawNixCacheMaxAgeO @RawNixCacheMaxAge (7 * 24 * 3600) <*>
+      rawNixCacheMaxAgeO @RawNixCacheErrorMaxAge 800 <*>
+      logLevelO)
     cmdp =
       hsubparser
         (  command "web" (infoP serviceP "launch web service")
@@ -98,6 +106,16 @@ logLevelO =
     <> value LevelDebug
     <> help "app log level"
     <> metavar "LOG"
+  )
+
+rawNixCacheMaxAgeO :: forall a. KnownSymbol a => NominalDiffTime -> Parser (Tagged a NominalDiffTime)
+rawNixCacheMaxAgeO defVal =
+ Tagged <$>
+  option auto
+  ( long (symbolVal $ Proxy @a)
+    <> showDefault
+    <> value defVal
+    <> help "max age of cached entity"
   )
 
 noSubmitionHeartbeatO :: Parser (Tagged NoSubmitionHeartbeatSec Second)
