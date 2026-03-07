@@ -15,11 +15,34 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as M
 import Data.Text qualified as T
 import PieceOfFlake.CmdArgs
+    ( FetcherCmdArgs(fetcherId, rawNixCacheErrMaxAge,
+                     rawNixCacheMaxAge, rawNixCache),
+      RawNixCacheErrorMaxAge,
+      RawNixCacheMaxAge,
+      FetcherSecret )
 import PieceOfFlake.Flake
+    ( FlakeUrl(..),
+      Architecture(..),
+      PackageName(..),
+      PackageInfo(..),
+      MetaFlake(..) )
 import PieceOfFlake.Flake.Repo ( FetcherReq(FetcherReq) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req
-import System.Process ( readProcess )
+    ( DynamicUrl,
+      POST(POST),
+      ReqBodyJson(ReqBodyJson),
+      HttpException(VanillaHttpException),
+      HttpConfig(httpConfigRetryJudge, httpConfigRetryJudgeException),
+      defaultHttpConfig,
+      jsonResponse,
+      responseBody,
+      runReq,
+      dynReq,
+      isStatusCodeException,
+      responseStatusCode )
+import System.Exit ( ExitCode(ExitFailure, ExitSuccess) )
+import System.Process ( readProcess, readProcessWithExitCode )
 import UnliftIO.Retry
     ( capDelay,
       fibonacciBackoff,
@@ -28,6 +51,10 @@ import UnliftIO.Retry
       recovering )
 
 import UnliftIO.Directory
+    ( doesFileExist,
+      createDirectoryIfMissing,
+      getModificationTime,
+      removeFile )
 import System.FilePath ( (</>) )
 
 
@@ -67,11 +94,13 @@ readJsonCached cacheDir prg prgArgs = do
       doDirect = do
         $(logDebug) $ "Direct read " <> show cmd
         createDirectoryIfMissing True callDir
-        prgOut <- catch
-          (liftIO (readProcess (toString prg) (toString <$> prgArgs) ""))
-          (\(e :: IOException) -> do
-            writeFileBS (untag exOut) $ encodeUtf8 (show e :: Text)
-            throwIO e)
+        prgOut <- liftIO $ do
+          readProcessWithExitCode (toString prg) (toString <$> prgArgs) "" >>= \case
+            (ExitSuccess, out, _err) -> pure out
+            (ExitFailure ec, _, err) -> do
+              writeFileBS (untag exOut) $ encodeUtf8 err
+              throwIO . stringException $ "Command [" <> show cmd <> "] exited with: " <>
+                show ec <> " and output: " <> err
         let prgOutBs = encodeUtf8 prgOut
         writeFileBS (untag outJson) prgOutBs
         writeFileLBS cmdFile cmd
