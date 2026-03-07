@@ -46,6 +46,7 @@ data FlakeIndex
   , indexerQueue :: TQueue FlakeUrl
   , indexerQueueLen :: TVar Int
   , queryCache :: TVar (LruCache Text UTCTime)
+  , searchRequestCounter :: TVar Integer
   }
 
 mkFlakeIndex :: MonadIO m => Tagged IndexQueryCacheSize Word -> m FlakeIndex
@@ -55,7 +56,8 @@ mkFlakeIndex (Tagged cs) = do
       newTVarIO emptySearchEngine <*>
       newTQueueIO <*>
       newTVarIO 0 <*>
-      newTVarIO (LRU.empty $ fromIntegral cs)
+      newTVarIO (LRU.empty $ fromIntegral cs) <*>
+      newTVarIO 0
 
 packageInfoToTerms :: PackageInfo -> [Term]
 packageInfoToTerms pi =

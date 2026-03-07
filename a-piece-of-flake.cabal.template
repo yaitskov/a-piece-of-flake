@@ -68,6 +68,7 @@ library
     PieceOfFlake.Page
     PieceOfFlake.Prelude
     PieceOfFlake.Req
+    PieceOfFlake.Stats
     PieceOfFlake.Stm
     PieceOfFlake.Th
     PieceOfFlake.Yesod
@@ -89,6 +90,7 @@ library
     , file-embed              < 1
     , filepath                < 2
     , full-text-search        < 1
+    , generics-sop            < 1
     , hnix                    < 1
     , hostname                < 2
     , http-types              < 1
@@ -107,6 +109,7 @@ library
     , req                     < 4
     , retry                   < 1
     , safecopy                < 1
+    , sop-core                < 1
     , stm-containers          < 2
     , stm                     < 3
     , swizzle                 < 2

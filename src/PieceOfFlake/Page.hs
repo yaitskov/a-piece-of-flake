@@ -17,14 +17,10 @@ import PieceOfFlake.Flake
       MetaFlake(description, packages, rev),
       PackageInfo(broken, name, description, license, unfree) )
 import PieceOfFlake.Flake.Repo
-    ( FlakeRepo(flakes, flakeIndex, fetcherSecret, wsArgs),
-      FetcherReq(FetcherReq),
-      trySubmitFlakeToRepo,
-      popFlakeSubmition,
-      addFetchedFlake,
-      validateRawFlakeUrl )
-import PieceOfFlake.Index ( findFlakes, listQueryCache )
+
+import PieceOfFlake.Index ( findFlakes, listQueryCache, FlakeIndex (searchRequestCounter) )
 import PieceOfFlake.Prelude hiding (Map, error, pi, Handler)
+import PieceOfFlake.Stats
 import PieceOfFlake.Th ( includeFile )
 import PieceOfFlake.Yesod
     ( Ts(Ts),
@@ -104,13 +100,16 @@ getStatsR :: Handler Html
 getStatsR = do
   Ypp { repo } <- getYesod
   queries <- listQueryCache repo.flakeIndex
+  searchReq <- readTVarIO repo.flakeIndex.searchRequestCounter
+  rs <- atomically  $ greadTraVar repo.repoStats
   bulmaLayout $ do
     setTitle "Stats"
     metaTags
     navBar
     [whamlet|
             <section class="section pt-5">
-              <h1 class="title is-4 mb-3">
+              ^{renderRepoStats searchReq rs}
+              <h2 class="title is-4 mb-3">
                 Popular Queries
               $if null queries
                 <div class="notification is-warning">

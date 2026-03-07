@@ -17,6 +17,7 @@ import PieceOfFlake.CmdArgs
 import PieceOfFlake.Index
 import PieceOfFlake.Prelude hiding (Map, show)
 import PieceOfFlake.Prelude qualified as P
+import PieceOfFlake.Stats
 import PieceOfFlake.Stm ( newTQueueIO, readTQueue, writeTQueue, TQueue, atomicalog )
 import StmContainers.Map ( insert, lookup, newIO, Map )
 import Text.Regex.TDFA ( (=~) )
@@ -28,6 +29,7 @@ data FlakeRepo
   , flakeIndex :: FlakeIndex
   , wsArgs :: WsCmdArgs
   , acidFlakes :: AcidState AcidFlakes
+  , repoStats :: RepoStatsF TVar
   , fetcherIps :: Map FetcherId IpAdr
   , fetcherQueue :: TQueue (Maybe FlakeUrl)
   , fetcherQueueLen :: TVar Int
@@ -44,6 +46,7 @@ mkFlakeRepo :: MonadIO m =>
 mkFlakeRepo fetSec cmdA fi flakesMap acidFlakeStorage = do
   liftIO $
     FlakeRepo flakesMap fetSec fi cmdA acidFlakeStorage <$>
+      mkRepoStats <*>
       newIO <*>
       newTQueueIO <*>
       newTVarIO 0 <*>
