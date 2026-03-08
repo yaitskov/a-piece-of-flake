@@ -23,23 +23,16 @@ import Data.SearchEngine
       insertDoc,
       queryAutosuggest,
       ResultsFilter(NoFilter) )
+import Data.RingBuffer qualified as RB
 import ListT qualified as L
 import NLP.Tokenize.Text ( tokenize )
 import PieceOfFlake.Flake
-    ( FlakeUrl,
-      Flake(flakeUrl, FlakeIndexed, FlakeFetched, meta),
-      PackageInfo(broken, description, license, name, unfree),
-      MetaFlake(hasNixOsModules, description, packages),
-      isIndexed,
-      repoOfFlakeUrl )
 import PieceOfFlake.CmdArgs ( IndexQueryCacheSize )
 import PieceOfFlake.Prelude hiding (pi, Map)
 import PieceOfFlake.Stm
     ( readTQueue, writeTQueue, TQueue, newTQueueIO, atomicalog )
 import StmContainers.Map ( insert, listTNonAtomic, lookup, Map )
 import PieceOfFlake.Stats
-    ( RepoStatsF(indexedFlakes, fetchedFlakes) )
-
 type FlakeSearchEngine = SearchEngine (FlakeUrl, MetaFlake) FlakeUrl () ()
 
 data FlakeIndex
@@ -98,18 +91,35 @@ emptySearchEngine =
     , paramAutosuggestPostfilterLimit = 10
     }
 
+newtype FlakeIndexedSuc = FlakeIndexedSuc UTCTime
+
+nothing :: Monad m => m a1 -> m (Maybe a2)
+nothing m = do
+  void m
+  pure Nothing
+
 consumeIndexQueue :: PoF m => RepoStatsF TVar -> Map FlakeUrl Flake -> FlakeIndex -> m ()
 consumeIndexQueue rs fs fi = do
   now <- liftIO getCurrentTime
-  atomicalog $ do
+  r :: Maybe FlakeIndexedSuc <- atomicalog $ do
     $(logInfo) "Wait for flakes to index for full text search"
     fu <- lift $ readTQueue fi.indexerQueue
     lift $ modifyTVar' fi.indexerQueueLen (\x -> x - 1)
     ql <- lift $ readTVar fi.indexerQueueLen
     $(logInfo) $ "Start index flake " <> show fu <> "; index queue " <> show ql
     lift (lookup fu fs) >>= \case
-      Nothing -> $(logError) $ "Flake " <> show fu <> " is missing"
-      Just f -> indexFlake rs now fi fs f
+      Nothing -> do
+        $(logError) $ "Flake " <> show fu <> " is missing"
+        pure Nothing
+      Just f ->
+        do r :: Maybe FlakeIndexedSuc <- indexFlake rs now fi fs f
+           pure r
+  mapM_ (\(FlakeIndexedSuc enqueuedAt) -> do
+            newer <- getCurrentTime
+            addTimeDif rs.meanIndexTime newer now
+            addTimeDif rs.meanTimeInIndexQueue newer enqueuedAt
+        ) r
+
 
 indexNewFlake :: (MonadLogger (t STM), MonadTrans t) => FlakeIndex -> FlakeUrl -> t STM ()
 indexNewFlake fi fu = do
@@ -120,7 +130,7 @@ indexNewFlake fi fu = do
   $(logInfo) $ "Indexer queue increased to " <> show iql
 
 indexFlake :: (MonadLogger (t STM), MonadTrans t) =>
-  RepoStatsF TVar -> UTCTime -> FlakeIndex -> Map FlakeUrl Flake -> Flake -> t STM ()
+  RepoStatsF TVar -> UTCTime -> FlakeIndex -> Map FlakeUrl Flake -> Flake -> t STM (Maybe FlakeIndexedSuc)
 indexFlake rs  =
   indexFlake' $ do
     lift $ do
@@ -128,10 +138,10 @@ indexFlake rs  =
       modifyTVar' rs.indexedFlakes (1 +)
 
 indexFlake' :: (MonadLogger (t STM), MonadTrans t) =>
-  t STM () -> UTCTime -> FlakeIndex -> Map FlakeUrl Flake -> Flake -> t STM ()
+  t STM () -> UTCTime -> FlakeIndex -> Map FlakeUrl Flake -> Flake -> t STM (Maybe FlakeIndexedSuc)
 indexFlake' onIndexed now fi fs f =
   case f of
-   ff@FlakeFetched { flakeUrl } ->
+   ff@FlakeFetched { flakeUrl, uploadedAt } ->
      let fu = flakeUrl
          ixf = FlakeIndexed fu now ff.meta
      in
@@ -141,20 +151,31 @@ indexFlake' onIndexed now fi fs f =
            insert ixf fu fs
            modifyTVar' fi.searchEngine (insertDoc (fu, ff.meta))
          $(logInfo) $ "Finished index flake " <> show fu
-   _nff -> $(logError) $ "Flake " <> show f.flakeUrl <> " is not in the fetched state"
+         pure . Just $ FlakeIndexedSuc uploadedAt
+   _nff -> do
+     $(logError) $ "Flake " <> show f.flakeUrl <> " is not in the fetched state"
+     pure Nothing
 
 loadIndexFromScratch ::
   PoF m => RepoStatsF TVar -> FlakeIndex -> Map FlakeUrl Flake -> [(FlakeUrl, Flake)] -> m ()
 loadIndexFromScratch rs fi fsm fs = do
   now <- liftIO getCurrentTime
-  atomicalog $ do
+  totalIndexed :: Int <- atomicalog $ do
     $(logInfo) "Started init full text search index population"
-    mapM_ (go now) fs
+    r <- foldlM (go now) 0 fs
     $(logInfo) "Ended init full text search index population"
+    pure r
+
+  avg :: NominalDiffTime <- ( /  realToFrac totalIndexed ) . flip diffUTCTime now <$> getCurrentTime
+  liftIO $ RB.append  avg rs.meanIndexTime
+
   where
-    go now = \case
-      (_, ff@FlakeFetched {}) -> indexFlake' (lift $ modifyTVar' rs.indexedFlakes (1 +)) now fi fsm ff
-      (fu, nff) -> lift $ insert nff fu fsm
+    go now (i :: Int) = \case
+      (_, ff@FlakeFetched {}) ->
+        (i + ) . maybe 0 (const 1) <$> indexFlake' (lift $ modifyTVar' rs.indexedFlakes (1 +)) now fi fsm ff
+      (fu, nff) -> do
+        lift $ insert nff fu fsm
+        pure i
 
 data FlakeSearchReq
   = FlakeSearchReq

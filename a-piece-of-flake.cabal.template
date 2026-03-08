@@ -105,11 +105,14 @@ library
     , process                 < 2
     , psqueues                < 1
     , ref-tf                  < 1
+    , refined                 < 1
     , regex-tdfa              < 2
     , req                     < 4
     , retry                   < 1
+    , ring-buffer             < 1
     , safecopy                < 1
     , sop-core                < 1
+    , statistics              < 1
     , stm-containers          < 2
     , stm                     < 3
     , swizzle                 < 2
@@ -120,6 +123,7 @@ library
     , time-units              < 2
     , tokenize                < 1
     , trace-embrace           >= 1.3 && < 2
+    , vector                  < 1
     , wai                     < 4
     , warp                    < 4
     , warp-tls                < 4

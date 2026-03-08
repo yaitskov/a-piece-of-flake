@@ -1,17 +1,16 @@
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE TemplateHaskell #-}
 module PieceOfFlake.CmdArgs where
 
 import Data.Either.Combinators ( mapLeft )
+import GHC.TypeLits (KnownSymbol)
 import Network.HostName ( getHostName )
 import Options.Applicative
 import PieceOfFlake.Flake ( FetcherId(..) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Prelude qualified as P
-import PieceOfFlake.Req
-    ( DynamicUrl(UrlHttp), http, port, parseUrl )
+import PieceOfFlake.Req ( DynamicUrl(UrlHttp), http, port, parseUrl )
 import Text.Show ( Show(show) )
-import GHC.TypeLits (KnownSymbol)
-
 
 data HttpPort
 data Cert
@@ -23,6 +22,11 @@ data BaseUrl
 data NoSubmitionHeartbeatSec
 data ResubmitPeriod
 type IndexQueryCacheSize = "index-query-cache-size"
+
+newtype RingBufferSize = RingBufferSize (Refined (FromTo 1 12) Int)
+
+instance Show RingBufferSize where
+  show = P.show . unrefine . coerce
 
 newtype FetcherSecret = FetcherSecret Text deriving (Eq, Generic, FromJSON, ToJSON)
 instance Show FetcherSecret where
@@ -41,6 +45,7 @@ data WsCmdArgs
     , allowResubmitBadFlakeIn :: Tagged ResubmitPeriod NominalDiffTime
     , logLevel :: LogLevel
     , indexQueryCacheSize :: Tagged IndexQueryCacheSize Word
+    , ringBufferSize :: RingBufferSize
     }
   deriving Show
 
@@ -71,7 +76,8 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
     serviceP = WebService <$> (WsCmdArgs <$> portOption <*> certO <*>
       certKeyO <*> acidOption <*> cacheSecondsO <*>
       baseUrlO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
-      allowResubmitBadFlakeInO <*> logLevelO <*> indexQueryCacheSizeO)
+      allowResubmitBadFlakeInO <*> logLevelO <*>
+      indexQueryCacheSizeO <*> ringBufferSizeO)
     fetcherP = FetcherJob <$> (FetcherCmdArgs <$> urlOption <*> rawNixCacheO <*>
       customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
       rawNixCacheMaxAgeO @RawNixCacheMaxAge (7 * 24 * 3600) <*>
@@ -130,6 +136,15 @@ noSubmitionHeartbeatO = Tagged <$>
     <> value 600
     <> help "period for putting empty submition request into fetcher queue (in seconds) when queue is empty"
     <> metavar "HEARTBEAT"
+  )
+
+ringBufferSizeO :: Parser RingBufferSize
+ringBufferSizeO =
+  option (eitherReader (mapLeft toString . readEither >=> fmap RingBufferSize . mapLeft P.show . refine))
+  ( long "ring-buffer"
+    <> showDefault
+    <> value (RingBufferSize $$(refineTH 3))
+    <> help "ring buffer size that  is used for mean values"
   )
 
 indexQueryCacheSizeO :: Parser (Tagged IndexQueryCacheSize Word)

@@ -6,18 +6,17 @@ import Control.Concurrent (threadDelay)
 import Data.Acid ( AcidState )
 import PieceOfFlake.Acid ( AcidFlakes )
 import PieceOfFlake.Flake
-    ( FetcherId,
-      Flake(fetcherRespondedAt, SubmittedFlake, flakeUrl,
-            FlakeIsBeingFetched, BadFlake, FlakeFetched),
-      FlakeUrl(..),
-      IpAdr,
-      MetaFlake,
-      RawFlakeUrl(..) )
 import PieceOfFlake.CmdArgs
+    ( WsCmdArgs(allowResubmitBadFlakeIn),
+      FetcherSecret,
+      NoSubmitionHeartbeatSec )
 import PieceOfFlake.Index
 import PieceOfFlake.Prelude hiding (Map, show)
 import PieceOfFlake.Prelude qualified as P
 import PieceOfFlake.Stats
+    ( RepoStatsF(totalFlakeUploadsSinceRestart, badFlakes,
+                 fetchingFlakes, fetchedFlakes, meanFetchTime, submittedFlakes, meanTimeInFetchQueue),
+      addTimeDif )
 import PieceOfFlake.Stm ( newTQueueIO, readTQueue, writeTQueue, TQueue, atomicalog )
 import StmContainers.Map ( insert, lookup, newIO, Map )
 import Text.Regex.TDFA ( (=~) )
@@ -86,29 +85,32 @@ trySubmitFlakeToRepo ip fr fu = do
 popFlakeSubmition :: PoF m => FlakeRepo -> FetcherId -> m (Maybe FlakeUrl)
 popFlakeSubmition fr ftid = do
   now <- liftIO getCurrentTime
-  atomicalog (popFlakeSubmitionStm ftid fr now)
+  atomicalog (popFlakeSubmitionStm ftid fr now) >>= mapM
+    (\(fu, sa) -> do
+       addTimeDif fr.repoStats.meanTimeInFetchQueue now sa
+       pure fu)
 
 popFlakeSubmitionStm  ::
   FetcherId ->
   FlakeRepo ->
   UTCTime ->
-  WriterLoggingT STM (Maybe FlakeUrl)
+  WriterLoggingT STM (Maybe (FlakeUrl, UTCTime))
 popFlakeSubmitionStm ftid fr now = do
   fSub <- lift $ readTQueue fr.fetcherQueue
   lift $ modifyTVar' fr.fetcherQueueLen (\x -> x - 1)
   fql <- lift $ readTVar fr.fetcherQueueLen
   $(logInfo) $ "Fetcher queue decreased to " <> P.show fql
   case fSub of
-    Nothing -> pure fSub
+    Nothing -> pure Nothing
     Just fu ->
       lift (lookup fu fr.flakes) >>= \case
-        Just (SubmittedFlake { flakeUrl })
+        Just (SubmittedFlake { flakeUrl, submittedAt })
           | flakeUrl == fu -> do
             lift $ do
               modifyTVar' fr.repoStats.submittedFlakes (flip (-) 1)
               modifyTVar' fr.repoStats.fetchingFlakes (1 +)
               insert (FlakeIsBeingFetched flakeUrl now ftid) fu fr.flakes
-            pure $ Just flakeUrl
+            pure $ Just (flakeUrl, submittedAt)
           | otherwise -> do
             $(logError) $ "Error flake url mismatch " <> P.show fu <> " <> " <> P.show flakeUrl
             popFlakeSubmitionStm ftid fr now
@@ -136,8 +138,12 @@ addFetchedFlake :: PoF m =>
   (FlakeUrl, Either Text MetaFlake) ->
   m (Maybe FlakeUrl)
 addFetchedFlake fr ftid (fu, fetchedFlake) = do
-  now <- liftIO getCurrentTime
-  atomicalog (go now) >> atomicalog (popFlakeSubmitionStm ftid fr now)
+  now <- getCurrentTime
+  mapM_ (addTimeDif fr.repoStats.meanFetchTime now) =<< atomicalog (go now)
+  atomicalog (popFlakeSubmitionStm ftid fr now) >>= mapM
+    (\(fu', sa) -> do
+       flip (addTimeDif fr.repoStats.meanTimeInFetchQueue) sa =<< getCurrentTime
+       pure fu')
   where
     go now = do
       lift (lookup fu fr.flakes) >>= \case
@@ -150,6 +156,7 @@ addFetchedFlake fr ftid (fu, fetchedFlake) = do
                   modifyTVar' fr.repoStats.badFlakes (1 +)
                   insert (BadFlake fu now e) fu fr.flakes
                 $(logInfo) $ "Fetching flake " <> P.show fu <> " failed in " <> P.show (duration now past)
+                pure Nothing
 
               Right meta -> do
                 let f = FlakeFetched fu now meta
@@ -160,12 +167,16 @@ addFetchedFlake fr ftid (fu, fetchedFlake) = do
                 $(logInfo) $ "Flake " <> P.show fu <> " is fetched in " <> P.show (duration now past)
                 lift $ writeTQueue fr.acidQueue (fu, f)
                 indexNewFlake fr.flakeIndex fu
-          | otherwise ->
+                pure $ Just past
+          | otherwise -> do
               $(logError) $ "Error flake url mismatch " <> P.show fu <> " <> " <> P.show exFu
-        Just ufs ->
+              pure Nothing
+        Just ufs -> do
           $(logError) $ "Expected FlakeIsBeingFetched state but: " <> P.show ufs
-        Nothing ->
+          pure Nothing
+        Nothing -> do
           $(logError) $ "Error flake " <> P.show fu <> " is missing in map"
+          pure Nothing
 
 sendEmtpyFlakeSubmition ::
   PoF m => FlakeRepo -> Tagged NoSubmitionHeartbeatSec Second -> m ()

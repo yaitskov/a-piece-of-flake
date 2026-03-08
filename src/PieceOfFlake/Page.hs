@@ -103,7 +103,7 @@ getStatsR = do
   fetchQueueLen <- Tagged @"fetch" <$> readTVarIO repo.fetcherQueueLen
   idxQueueLen <- readTVarIO repo.flakeIndex.indexerQueueLen
   searchReq <- readTVarIO repo.flakeIndex.searchRequestCounter
-  rs <- atomically $ greadTraVar repo.repoStats
+  rs <- greadTraVar repo.repoStats
   bulmaLayout $ do
     setTitle "Stats"
     metaTags

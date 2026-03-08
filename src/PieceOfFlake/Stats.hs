@@ -4,52 +4,71 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-
 module PieceOfFlake.Stats where
 
+import Data.RingBuffer as RB ( RingBuffer, append, new, toList )
+import Data.Vector as V ( Vector, fromList )
 import Generics.SOP as S
+import PieceOfFlake.CmdArgs
 import PieceOfFlake.Prelude
 import PieceOfFlake.Prelude qualified as P
-import Yesod.Core ( hamlet )
+import Statistics.Sample as SS ( mean )
 import Text.Blaze.Internal ( MarkupM )
 import Text.Blaze ( ToMarkup(toMarkup) )
+import Yesod.Core ( hamlet )
 
 
 class ReadTVar a b where
-  readTraVar :: a -> STM b
+  readTraVar :: MonadIO m => a -> m b
 
-greadTraVar :: (S.Generic a, S.Generic b, AllZip2 ReadTVar (Code a) (Code b)) => a -> STM b
+greadTraVar :: (MonadIO m, S.Generic a, S.Generic b, AllZip2 ReadTVar (Code a) (Code b)) => a -> m b
 greadTraVar x = to <$> greadTraVarS (from x)
 
-greadTraVarS :: (AllZip2 ReadTVar xss yss) => SOP I xss -> STM (SOP I yss)
+greadTraVarS :: (MonadIO m, AllZip2 ReadTVar xss yss) => SOP I xss -> m (SOP I yss)
 greadTraVarS (SOP (Z xs)) = SOP . Z <$> greadTraVarP xs
 greadTraVarS (SOP (S xss)) = do
   SOP r <- greadTraVarS (SOP xss)
   pure $ SOP (S r)
 
-greadTraVarP :: (AllZip ReadTVar xs ys) => NP I xs -> STM (NP I ys)
+greadTraVarP :: (MonadIO m, AllZip ReadTVar xs ys) => NP I xs -> m (NP I ys)
 greadTraVarP Nil = pure Nil
 greadTraVarP (I x :* xs) = do
   r <- readTraVar x
   (I r :*) <$> greadTraVarP xs
 
 
+
+type family Columnar (f :: Type -> Type) (g :: Type -> Type) a
+type instance Columnar TVar TVar a = TVar a
+type instance Columnar Ydentity TVar  a = Ydentity a
+
+type instance Columnar TVar (RingBuffer Vector) NominalDiffTime = RingBuffer Vector NominalDiffTime
+type instance Columnar Ydentity (RingBuffer Vector) NominalDiffTime = Double
+
 data RepoStatsF f
   = RepoStats
-  { totalFlakeUploadsSinceRestart :: f Int
-  , submittedFlakes :: f Int
-  , fetchingFlakes :: f Int
-  , badFlakes :: f Int
-  , fetchedFlakes :: f Int
-  , indexedFlakes :: f Int
+  { totalFlakeUploadsSinceRestart :: Columnar f TVar Int
+  , meanFetchTime :: Columnar f (RingBuffer Vector) NominalDiffTime
+  , meanIndexTime :: Columnar f (RingBuffer Vector) NominalDiffTime
+  , meanTimeInFetchQueue :: Columnar f (RingBuffer Vector) NominalDiffTime
+  , meanTimeInIndexQueue :: Columnar f (RingBuffer Vector) NominalDiffTime
+  , submittedFlakes :: Columnar f TVar Int
+  , fetchingFlakes :: Columnar f TVar Int
+  , badFlakes :: Columnar f TVar Int
+  , fetchedFlakes :: Columnar f TVar Int
+  , indexedFlakes :: Columnar f TVar Int
   } deriving P.Generic
 instance S.Generic (RepoStatsF a)
 
-mkRepoStats :: MonadIO m => m (RepoStatsF TVar)
-mkRepoStats =
+mkRepoStats :: MonadIO m => RingBufferSize -> m (RepoStatsF TVar)
+mkRepoStats (unrefine . coerce -> rbs) =
   liftIO $
     RepoStats <$>
       newTVarIO 0 <*>
+      RB.new rbs <*>
+      RB.new rbs <*>
+      RB.new rbs <*>
+      RB.new rbs <*>
       newTVarIO 0 <*>
       newTVarIO 0 <*>
       newTVarIO 0 <*>
@@ -63,11 +82,19 @@ instance ToMarkup a => ToMarkup (Ydentity a) where
 
 instance ReadTVar (TVar a) (Ydentity a) where
   readTraVar x = do
-    r <- readTVar x
+    r <- readTVarIO x
     pure (Ydentity r)
 
-type RepoStats = RepoStatsF Ydentity
+instance ReadTVar (RingBuffer Vector NominalDiffTime) Double where
+  readTraVar = meanFetch
 
+meanFetch :: MonadIO m => RingBuffer Vector NominalDiffTime -> m Double
+meanFetch rb = SS.mean . V.fromList . fmap realToFrac <$> liftIO (RB.toList rb)
+
+addTimeDif :: MonadIO m => RingBuffer Vector NominalDiffTime -> UTCTime -> UTCTime -> m ()
+addTimeDif rb now past = liftIO $ RB.append (now `diffUTCTime` past) rb
+
+type RepoStats = RepoStatsF Ydentity
 
 renderRepoStats :: Integer -> Int -> Tagged "fetch" Int -> RepoStatsF Ydentity -> p -> MarkupM ()
 renderRepoStats searchRequests idxQueueLen (Tagged fetchQueueLen) rs =
@@ -100,4 +127,16 @@ renderRepoStats searchRequests idxQueueLen (Tagged fetchQueueLen) rs =
             <tr>
               <td>Index Queue
               <td>#{idxQueueLen}
+            <tr>
+              <td>Flake Fetch mean time
+                 <td>#{rs.meanFetchTime}
+            <tr>
+              <td>Flake Index mean time
+                 <td>#{rs.meanIndexTime}
+            <tr>
+              <td>Mean time flake waits in fetch queue
+                 <td>#{rs.meanTimeInFetchQueue}
+            <tr>
+              <td>Mean time flake waits in index queue
+                 <td>#{rs.meanTimeInIndexQueue}
         |]

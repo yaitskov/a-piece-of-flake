@@ -9,11 +9,15 @@ import PieceOfFlake.Acid
 import PieceOfFlake.CmdArgs
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
+    ( FlakeRepo(flakeIndex, acidFlakes, acidQueue, repoStats, flakes),
+      mkFlakeRepo,
+      sendEmtpyFlakeSubmition )
 import PieceOfFlake.Index
+    ( mkFlakeIndex, loadIndexFromScratch, consumeIndexQueue )
 import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req ( setResponseTimeout )
-import PieceOfFlake.Stats
+import PieceOfFlake.Stats ( mkRepoStats )
 import Network.Wai.Handler.WarpTLS ( runTLS, tlsSettings, TLSSettings )
 import Network.Wai.Handler.Warp
     ( Settings,
@@ -73,7 +77,7 @@ initRepo fsec wsa = do
   flakesMap <- liftIO newIO
   fi <- mkFlakeIndex wsa.indexQueryCacheSize
   acidFlakeStorage <- openFlakeDb wsa.acidFlakes
-  rs <- mkRepoStats
+  rs <- mkRepoStats wsa.ringBufferSize
   loadIndexFromScratch rs fi flakesMap . reverse =<< loadFromDb acidFlakeStorage
   mkFlakeRepo fsec wsa fi flakesMap acidFlakeStorage rs
 

@@ -149,6 +149,22 @@
         "type": "github"
       }
     },
+    "ring-buffer": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1772950533,
+        "narHash": "sha256-uoV0+rWfIbZEMdy7S/Js17xgyECjPijMSQj6pEL34Ac=",
+        "owner": "yaitskov",
+        "repo": "ring-buffer",
+        "rev": "cc99ac63ba569298477ac0399ba542b32bffc8c0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "yaitskov",
+        "repo": "ring-buffer",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "adf": "adf",
@@ -157,6 +173,7 @@
         "hnix": "hnix",
         "hnix-store": "hnix-store",
         "nixpkgs": "nixpkgs_2",
+        "ring-buffer": "ring-buffer",
         "te": "te",
         "uphack": "uphack_2"
       }
