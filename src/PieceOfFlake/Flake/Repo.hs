@@ -1,16 +1,21 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 module PieceOfFlake.Flake.Repo where
 
 import Control.Concurrent (threadDelay)
 import Data.Acid ( AcidState )
 import PieceOfFlake.Acid ( AcidFlakes )
 import PieceOfFlake.Flake
+    ( FlakeUrl(..),
+      RawFlakeUrl(..),
+      MetaFlake,
+      IpAdr,
+      FetcherId,
+      Flake(fetcherRespondedAt, SubmittedFlake, flakeUrl, submittedAt,
+            FlakeIsBeingFetched, BadFlake, FlakeFetched) )
 import PieceOfFlake.CmdArgs
     ( WsCmdArgs(allowResubmitBadFlakeIn),
       FetcherSecret,
       NoSubmitionHeartbeatSec )
-import PieceOfFlake.Index
+import PieceOfFlake.Index ( FlakeIndex, indexNewFlake )
 import PieceOfFlake.Prelude hiding (Map, show)
 import PieceOfFlake.Prelude qualified as P
 import PieceOfFlake.Stats
@@ -20,6 +25,7 @@ import PieceOfFlake.Stats
 import PieceOfFlake.Stm ( newTQueueIO, readTQueue, writeTQueue, TQueue, atomicalog )
 import StmContainers.Map ( insert, lookup, newIO, Map )
 import Text.Regex.TDFA ( (=~) )
+
 
 data FlakeRepo
   = FlakeRepo
@@ -53,16 +59,18 @@ mkFlakeRepo fetSec cmdA fi flakesMap acidFlakeStorage rs = do
 
 trySubmitFlakeToRepo :: PoF m => IpAdr -> FlakeRepo -> FlakeUrl -> m (Either Text Flake)
 trySubmitFlakeToRepo ip fr fu = do
-  now <- liftIO getCurrentTime
   atomicalog $ do
     lift (lookup fu fr.flakes) >>= \case
-      Nothing -> submitFlakeToRepo now
-      Just bf@BadFlake {}
-        | now `diffUTCTime` bf.fetcherRespondedAt > untag fr.wsArgs.allowResubmitBadFlakeIn -> do
-            $(logInfo) $ "Resubmit flake " <> P.show fu
-            submitFlakeToRepo now
-        | otherwise ->
-          pure . Left $ "Flake resubmitted within " <> P.show (untag fr.wsArgs.allowResubmitBadFlakeIn)
+      Nothing -> submitFlakeToRepo . mkUtcBox =<< getCurrentTime
+      Just bf@BadFlake {} ->
+        doAfter bf.fetcherRespondedAt
+        (\fra -> do
+            now <- lift $ getTimeAfter fra
+            if now `diffUTCTime` fra > untag fr.wsArgs.allowResubmitBadFlakeIn then do
+              $(logInfo) $ "Resubmit flake " <> P.show fu
+              submitFlakeToRepo $ mkUtcBox now
+            else
+              pure . Left $ "Flake resubmitted within " <> P.show (untag fr.wsArgs.allowResubmitBadFlakeIn))
       Just f ->
         pure $ Right f
   where
@@ -84,18 +92,18 @@ trySubmitFlakeToRepo ip fr fu = do
 
 popFlakeSubmition :: PoF m => FlakeRepo -> FetcherId -> m (Maybe FlakeUrl)
 popFlakeSubmition fr ftid = do
-  now <- liftIO getCurrentTime
-  atomicalog (popFlakeSubmitionStm ftid fr now) >>= mapM
-    (\(fu, sa) -> do
-       addTimeDif fr.repoStats.meanTimeInFetchQueue now sa
+  atomicalog (popFlakeSubmitionStm ftid fr) >>= mapM
+    (\(fu, Tagged ifq) -> do
+       addTimeDif fr.repoStats.meanTimeInFetchQueue ifq
        pure fu)
+
+data TimeInFetchQueue
 
 popFlakeSubmitionStm  ::
   FetcherId ->
   FlakeRepo ->
-  UTCTime ->
-  WriterLoggingT STM (Maybe (FlakeUrl, UTCTime))
-popFlakeSubmitionStm ftid fr now = do
+  WriterLoggingT STM (Maybe (FlakeUrl, Tagged TimeInFetchQueue NominalDiffTime))
+popFlakeSubmitionStm ftid fr = do
   fSub <- lift $ readTQueue fr.fetcherQueue
   lift $ modifyTVar' fr.fetcherQueueLen (\x -> x - 1)
   fql <- lift $ readTVar fr.fetcherQueueLen
@@ -109,17 +117,19 @@ popFlakeSubmitionStm ftid fr now = do
             lift $ do
               modifyTVar' fr.repoStats.submittedFlakes (flip (-) 1)
               modifyTVar' fr.repoStats.fetchingFlakes (1 +)
-              insert (FlakeIsBeingFetched flakeUrl now ftid) fu fr.flakes
-            pure $ Just (flakeUrl, submittedAt)
+              doAfter submittedAt (\sa -> do
+                now <- getTimeAfter sa
+                insert (FlakeIsBeingFetched flakeUrl (mkUtcBox now) ftid) fu fr.flakes
+                pure $ Just (flakeUrl, Tagged $ now `diffUTCTime` sa))
           | otherwise -> do
             $(logError) $ "Error flake url mismatch " <> P.show fu <> " <> " <> P.show flakeUrl
-            popFlakeSubmitionStm ftid fr now
+            popFlakeSubmitionStm ftid fr
         Just ufs -> do
           $(logError) $ "Expected SumbittedFlake state but:" <> P.show ufs
-          popFlakeSubmitionStm ftid fr now
+          popFlakeSubmitionStm ftid fr
         Nothing -> do
           $(logError) $ "Error flake " <> P.show fu <> " is missing in map"
-          popFlakeSubmitionStm ftid fr now
+          popFlakeSubmitionStm ftid fr
 
 data FetcherReq
   = FetcherReq
@@ -138,36 +148,37 @@ addFetchedFlake :: PoF m =>
   (FlakeUrl, Either Text MetaFlake) ->
   m (Maybe FlakeUrl)
 addFetchedFlake fr ftid (fu, fetchedFlake) = do
-  now <- getCurrentTime
-  mapM_ (addTimeDif fr.repoStats.meanFetchTime now) =<< atomicalog (go now)
-  atomicalog (popFlakeSubmitionStm ftid fr now) >>= mapM
-    (\(fu', sa) -> do
-       flip (addTimeDif fr.repoStats.meanTimeInFetchQueue) sa =<< getCurrentTime
+  mapM_ (addTimeDif fr.repoStats.meanFetchTime) =<< atomicalog go
+  atomicalog (popFlakeSubmitionStm ftid fr) >>= mapM
+    (\(fu', Tagged sa) -> do
+       addTimeDif fr.repoStats.meanTimeInFetchQueue sa
        pure fu')
   where
-    go now = do
+    go = do
       lift (lookup fu fr.flakes) >>= \case
         Just (FlakeIsBeingFetched exFu past _fid)
           | fu == exFu ->
-            case fetchedFlake of
-              Left e -> do
-                lift $ do
-                  modifyTVar' fr.repoStats.fetchingFlakes (flip (-) 1)
-                  modifyTVar' fr.repoStats.badFlakes (1 +)
-                  insert (BadFlake fu now e) fu fr.flakes
-                $(logInfo) $ "Fetching flake " <> P.show fu <> " failed in " <> P.show (duration now past)
-                pure Nothing
-
-              Right meta -> do
-                let f = FlakeFetched fu now meta
-                lift $ do
-                  modifyTVar' fr.repoStats.fetchingFlakes (flip (-) 1)
-                  modifyTVar' fr.repoStats.fetchedFlakes (1 +)
-                  insert f fu fr.flakes
-                $(logInfo) $ "Flake " <> P.show fu <> " is fetched in " <> P.show (duration now past)
-                lift $ writeTQueue fr.acidQueue (fu, f)
-                indexNewFlake fr.flakeIndex fu
-                pure $ Just past
+            doAfter past $ \p -> do
+              now <- lift $ getTimeAfter p
+              case fetchedFlake of
+                Left e -> do
+                  lift $ do
+                    modifyTVar' fr.repoStats.fetchingFlakes (flip (-) 1)
+                    modifyTVar' fr.repoStats.badFlakes (1 +)
+                    insert (BadFlake fu (mkUtcBox now) e) fu fr.flakes
+                  $(logInfo) $ "Fetching flake " <> P.show fu <> " failed in " <> P.show (now `diffUTCTime` p)
+                  pure Nothing
+                Right meta -> do
+                  let f = FlakeFetched fu (mkUtcBox now) meta
+                  lift $ do
+                    modifyTVar' fr.repoStats.fetchingFlakes (flip (-) 1)
+                    modifyTVar' fr.repoStats.fetchedFlakes (1 +)
+                    insert f fu fr.flakes
+                  let fetchTime = now `diffUTCTime` p
+                  $(logInfo) $ "Flake " <> P.show fu <> " is fetched in " <> P.show fetchTime
+                  lift $ writeTQueue fr.acidQueue (fu, f)
+                  indexNewFlake fr.flakeIndex fu
+                  pure $ Just fetchTime
           | otherwise -> do
               $(logError) $ "Error flake url mismatch " <> P.show fu <> " <> " <> P.show exFu
               pure Nothing

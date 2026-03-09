@@ -1,17 +1,14 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE DuplicateRecordFields #-}
 module PieceOfFlake.Stats where
 
 import Data.RingBuffer as RB ( RingBuffer, append, new, toList )
 import Data.Vector as V ( Vector, fromList )
 import Generics.SOP as S
-import PieceOfFlake.CmdArgs
-import PieceOfFlake.Prelude
+import PieceOfFlake.CmdArgs ( RingBufferSize(..) )
+import PieceOfFlake.Prelude hiding (NominalDiffTime)
 import PieceOfFlake.Prelude qualified as P
+import PieceOfFlake.UtcTime as U ( NominalDiffTime )
 import Statistics.Sample as SS ( mean )
 import Text.Blaze.Internal ( MarkupM )
 import Text.Blaze ( ToMarkup(toMarkup) )
@@ -91,8 +88,8 @@ instance ReadTVar (RingBuffer Vector NominalDiffTime) Double where
 meanFetch :: MonadIO m => RingBuffer Vector NominalDiffTime -> m Double
 meanFetch rb = SS.mean . V.fromList . fmap realToFrac <$> liftIO (RB.toList rb)
 
-addTimeDif :: MonadIO m => RingBuffer Vector NominalDiffTime -> UTCTime -> UTCTime -> m ()
-addTimeDif rb now past = liftIO $ RB.append (now `diffUTCTime` past) rb
+addTimeDif :: MonadIO m => RingBuffer Vector NominalDiffTime -> NominalDiffTime -> m ()
+addTimeDif rb td = liftIO $ RB.append td rb
 
 type RepoStats = RepoStatsF Ydentity
 

@@ -1,5 +1,3 @@
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 module PieceOfFlake.Fetcher where
 import Crypto.Hash.SHA1 (hashlazy)
 import Data.Aeson
@@ -53,7 +51,6 @@ import UnliftIO.Retry
 import UnliftIO.Directory
     ( doesFileExist,
       createDirectoryIfMissing,
-      getModificationTime,
       removeFile )
 import System.FilePath ( (</>) )
 
@@ -77,11 +74,9 @@ newtype ReadJsonCached = ReadJsonCached FilePath
     by that path create files out.json and cmd.sh
 -}
 
-isFileOlderThan :: MonadIO m => Tagged a FilePath -> Tagged a NominalDiffTime -> m Bool
-isFileOlderThan (Tagged fp) (Tagged age) =
-  liftA2 (>)
-    (addUTCTime (age * (-1)) <$> getCurrentTime)
-    $ getModificationTime fp
+isFileOlderThan :: (MonadIO m, ClockMonad m) => Tagged a FilePath -> Tagged a NominalDiffTime -> m Bool
+isFileOlderThan (Tagged fp) (Tagged age) = do
+  getModificationTime fp >>= (`doAfter` \mt -> do now <- getTimeAfter mt; pure $ now `diffUTCTime` mt > age)
 
 readJsonCached :: (FromJSON a, FetcherM m) => FilePath -> Text -> [Text] -> m a
 readJsonCached cacheDir prg prgArgs = do
@@ -318,7 +313,7 @@ uploadFlakeAndFetch f = do
       uploadFlakeAndFetch . Just . (fu,) . Right =<< metaFlakeFromUrl fu
 
 runFetcher :: PoF m => DynamicUrl -> FetcherCmdArgs -> FetcherSecret -> m ()
-runFetcher serviceUrl fa fsec = do -- rawNixCa fid fsec = do
+runFetcher serviceUrl fa fsec = do
   $(logInfo) $ "Fetcher " <> show fa.fetcherId <> " started for " <> show serviceUrl
   ca <- nixCurrentArch
   forever $ do

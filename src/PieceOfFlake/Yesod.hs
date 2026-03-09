@@ -124,6 +124,7 @@ bulmaLayout w = do
               ^{pageBody p}
       |]
 
-newtype Ts = Ts { unTs :: UTCTime } deriving newtype (Show, Eq, Ord)
+newtype Ts = Ts { unTs :: UtcBox } deriving newtype (Show, Eq, Ord)
+
 instance ToMarkup Ts where
   toMarkup = toMarkup . show @Text . unTs

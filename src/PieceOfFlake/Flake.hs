@@ -83,27 +83,27 @@ deriveSafeCopy 1 'base ''FetcherId
 data Flake
   = SubmittedFlake
   { flakeUrl :: FlakeUrl
-  , submittedAt :: UTCTime
+  , submittedAt :: UtcBox
   , submittedFrom :: IpAdr
   }
   | FlakeIsBeingFetched
   { flakeUrl :: FlakeUrl
-  , submitionFetchedAt :: UTCTime
+  , submitionFetchedAt :: UtcBox
   , fetcherId :: FetcherId
   }
   | BadFlake
   { flakeUrl :: FlakeUrl
-  , fetcherRespondedAt :: UTCTime
+  , fetcherRespondedAt :: UtcBox
   , error :: Text
   }
   | FlakeFetched
   { flakeUrl :: FlakeUrl
-  , uploadedAt :: UTCTime
+  , uploadedAt :: UtcBox
   , meta :: MetaFlake
   }
   | FlakeIndexed
   { flakeUrl :: FlakeUrl
-  , indexedAt :: UTCTime
+  , indexedAt :: UtcBox
   , meta :: MetaFlake
   }
   deriving (Show, Eq, Generic)

@@ -1,9 +1,5 @@
 {-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE MultilineStrings #-}
-{-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 module PieceOfFlake.Page where
 
 import Data.Aeson ( encode )
@@ -17,6 +13,13 @@ import PieceOfFlake.Flake
       MetaFlake(description, packages, rev),
       PackageInfo(broken, name, description, license, unfree) )
 import PieceOfFlake.Flake.Repo
+    ( FetcherReq(FetcherReq),
+      FlakeRepo(wsArgs, fetcherSecret, flakes, fetcherQueueLen,
+                flakeIndex, repoStats),
+      trySubmitFlakeToRepo,
+      popFlakeSubmition,
+      addFetchedFlake,
+      validateRawFlakeUrl )
 
 import PieceOfFlake.Index ( findFlakes, listQueryCache, FlakeIndex (searchRequestCounter, indexerQueueLen) )
 import PieceOfFlake.Prelude hiding (Map, error, pi, Handler)
@@ -95,6 +98,10 @@ getRobotsR = sendStaticBs typePlain $(includeFile "assets/robots.txt")
 getAppJsR = sendStaticBs typeJavascript $(includeFile "assets/app.js")
 getStyleR = sendStaticBs typeCss $(includeFile "assets/style.css")
 getBulmaR = sendStaticBs typeCss $(includeFile "assets/bulma.min.css")
+
+instance ClockMonad (HandlerFor Ypp) where
+  getCurrentTime = liftIO getCurrentTime
+  getTimeAfter x =  liftIO $ getTimeAfter x
 
 getStatsR :: Handler Html
 getStatsR = do
@@ -504,4 +511,4 @@ postFindFlakesR = do
   Ypp { repo } <- getYesod
   requireCheckJsonBody >>= go repo
   where
-    go repo = findFlakes repo.flakes repo.flakeIndex -- fsr .searchPattern
+    go repo = findFlakes repo.flakes repo.flakeIndex
