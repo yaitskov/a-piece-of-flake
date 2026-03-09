@@ -39,6 +39,8 @@ import PieceOfFlake.Stats
     ( RepoStatsF(meanTimeInIndexQueue, fetchedFlakes, indexedFlakes,
                  meanIndexTime),
       addTimeDif )
+import PieceOfFlake.TotalMath ( notZero, divNz, realToFracNz )
+
 type FlakeSearchEngine = SearchEngine (FlakeUrl, MetaFlake) FlakeUrl () ()
 
 data FlakeIndex
@@ -165,17 +167,6 @@ indexFlake' onIndexed fi fs f =
    _nff -> do
      $(logError) $ "Flake " <> show f.flakeUrl <> " is not in the fetched state"
      pure Nothing
-newtype Nz a = Nz a
-
-notZero :: (Eq a, Num a) => a -> Maybe (Nz a)
-notZero 0 = Nothing
-notZero x = pure $ Nz x
-
-divNz :: Fractional a => a -> Nz a -> a
-divNz a (Nz b) = a / b
-
-realToFracNz :: (Real a, Fractional b) => Nz a -> Nz b
-realToFracNz (Nz x) = Nz $ realToFrac x
 
 loadIndexFromScratch ::
   PoF m => RepoStatsF TVar -> FlakeIndex -> Map FlakeUrl Flake -> [(FlakeUrl, Flake)] -> m ()

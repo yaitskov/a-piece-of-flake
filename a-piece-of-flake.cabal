@@ -144,6 +144,7 @@ library
     PieceOfFlake.Stats
     PieceOfFlake.Stm
     PieceOfFlake.Th
+    PieceOfFlake.TotalMath
     PieceOfFlake.UtcTime
     PieceOfFlake.Yesod
   other-modules:
