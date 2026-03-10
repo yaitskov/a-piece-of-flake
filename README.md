@@ -14,6 +14,17 @@ $ emacs &
 $ cabal build
 $ cabal test
 ```
+### Update cachix
+
+``` shell
+nix build --no-link --print-out-paths | cachix push piece-of-flake
+```
+
+#### Cachix public key
+
+``` shell
+piece-of-flake.cachix.org-1:JamWDEABLpvWhGHIK7Xn/qYFbdZqb6ne7IAF62fXyFY=
+```
 
 ## Release
 ```shell
