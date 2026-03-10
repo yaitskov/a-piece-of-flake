@@ -53,6 +53,7 @@ mkYesod "Ypp" [parseRoutes|
 / HomeR GET
 /search SearchR GET
 /stats StatsR GET
+/about AboutR GET
 /flake/#FlakeUrl FlakeR GET
 /publication PublicationR GET
 /favicon.svg FaviconR GET
@@ -123,7 +124,7 @@ getStatsR = do
                 Popular Queries
               $if null queries
                 <div class="notification is-warning">
-                  No queries
+                   No queries
               $else
                 <div class=content>
                   <ul>
@@ -135,7 +136,7 @@ getStatsR = do
 getSearchR :: Handler Html
 getSearchR =
   bulmaLayout $ do
-    setTitle "Nix Flake Search"
+    setTitle "Search - A Piece of Flake"
     metaTags
     navBar
     [whamlet|
@@ -176,7 +177,7 @@ getHomeR = getSearchR
 getPublicationR :: Handler Html
 getPublicationR =
  defaultLayout $ do
-    setTitle "A Piece Of Flake"
+    setTitle "Publication - A Piece Of Flake"
     metaTags
     navBar
     [whamlet|
@@ -212,11 +213,59 @@ getPublicationR =
                 <pre id=error-output class="notification is-danger error">
             |]
 
--- getAboutR :: Handler Html
---                 <center>
---               <p>
---                 <a href="https://github.com/yaitskov/a-piece-of-flake">
---                   <img class=github src=/github.svg />
+getAboutR :: Handler Html
+getAboutR = defaultLayout $ do
+  setTitle "About - A Piece Of Flake"
+  metaTags
+  navBar
+  [whamlet| $newline always
+      <section class="section pt-4">
+        <h1 class="title is-4 mb-3">
+           About
+        <div class="content is-size-5 has-text-justified">
+          <p>
+             The main idea behind this project is to provide a quick and simple
+             interface for publishing Nix flakes.
+
+          <p>
+             Flakes have become relatively mature and address the central
+             repository issue. However, the Nixpkgs repository on GitHub still has
+             more that 5k open issues and a comparable number of pull requests, and
+             continues to receive many commits every day.  Getting a pull request
+             for a new tool merged into Nixpkgs can be difficult - the Nixpkgs
+             README explicitly discourages people from submitting their "pet"
+             projects.
+
+          <p>
+             The Nixpkgs repository is huge. It contains more than 120k packages, but
+             the majority of them are not native to Nix. For example, about 10%
+             are Haskell packages imported. Therefore, this large number cannot be
+             used as a reliable measure of how well the publishing process is
+             developed in Nix. For instance, the PyPy repository alone currently
+             contains almost 900k packages.
+
+          <p>
+             It is also important to note Python is the most popular
+             general-purpose programming language, and its publishing process was
+             designed by programmers for programmers. Yet there is no pull-request
+             step in the workflow. The interface is essentially "upload and
+             forget", which has a significant positive impact on the conversion
+             funnel of Python packages.
+
+          <p>
+             Flakes are easy to install, but the publishing workflow is not yet polished
+             enough. The current approach to distributing flakes appears to have
+             inherinted many characteristics of the Nixpkgs workflow.
+
+          <p>
+             For Nixpkgs, this was the natural way of development, because all
+             derivations form a large and coupled Nix expression split across many
+             files within a single Git repository.
+          <p>
+            <center>
+              <a href="https://github.com/yaitskov/a-piece-of-flake">
+                <img class=github src=/github.svg />
+          |]
 
 metaTags :: WidgetFor Ypp ()
 metaTags =
@@ -241,7 +290,7 @@ getFlakeR fu = do
     Just f -> flakeToWidget f
 
   bulmaLayout $ do
-    setTitle "Nix Flake Search"
+    setTitle $ show fu <> " - A Piece of Flake"
     metaTags
     navBar
     [whamlet|
@@ -481,7 +530,8 @@ navBar = do
                  Search
                <a class="navbar-item" href=@{StatsR}>
                  Stats
-
+               <a class="navbar-item" href=@{AboutR}>
+                 About
          |]
 
 postSubmitFlakeR :: Handler Flake
