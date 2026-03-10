@@ -3,7 +3,7 @@ module PieceOfFlake.Stm
   , atomicalog
   ) where
 
-import Data.Curry ( unc4 )
+
 import Control.Concurrent.STM.TQueue
 import PieceOfFlake.Prelude hiding (Map)
 
@@ -12,3 +12,5 @@ atomicalog a = do
   (r, l) <- atomically (runWriterLoggingT a)
   mapM_ (unc4 monadLoggerLog) l
   pure r
+  where
+    unc4 f (a1, b1, c1, d1) = f a1 b1 c1 d1

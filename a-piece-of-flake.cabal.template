@@ -126,7 +126,6 @@ library
     , statistics              < 1
     , stm-containers          < 2
     , stm                     < 3
-    , swizzle                 < 2
     , tar                     < 1
     , template-haskell        < 3
     , text-zipper             < 1
