@@ -119,11 +119,14 @@ const searchFlakesBy = (pattern) => {
   return false;
 };
 
+const rewriteUrlToGithubLink = (url) =>
+      url.replace(/^https:[/]{2}github[.]com[/]/, "github:");
+
 const submitFlake = (url) => {
   const badUrl = document.getElementById("bad-url");
 
   badUrl.className = "is-hidden";
-  url = url.trim();
+  url = rewriteUrlToGithubLink(url.trim());
   if (!url.match(/^github:[a-zA-Z0-9._-]+[/][a-zA-Z0-9._-]+$/)) {
     badUrl.className = "";
     return false;

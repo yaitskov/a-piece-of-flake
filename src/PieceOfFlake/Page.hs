@@ -194,8 +194,13 @@ getPublicationR =
                 <button class="button is-black">Publish</button>
            <div class=field>
              <div id=bad-url class=is-hidden>
-               <div class="notification is-danger">
-                 Url does not fit the pattern: <b>github:owner/project
+               <div class="notification is-danger content">
+                 Url does not fit the pattern:
+                 <ul>
+                   <li>
+                     <b>github:owner/project
+                   <li>
+                     <b>https://github.com/owner/project
             <div class=field>
               <div id=sumbitted-notification class=is-hidden>
                 <div class="notification is-success">
