@@ -57,6 +57,7 @@ mkYesod "Ypp" [parseRoutes|
 /flake/#FlakeUrl FlakeR GET
 /publication PublicationR GET
 /favicon.svg FaviconR GET
+/flake.svg FlakeSvgR GET
 /github.svg GitHubR GET
 /flush.mp3 FlushSoundR GET
 /snow.mp3 SnowSoundR GET
@@ -89,7 +90,8 @@ sendStaticBs mime c = do
   pure . TypedContent mime $ toContent c
 
 getAppJsR, getFaviconR, getRobotsR, getGitHubR, getFlushSoundR :: Handler TypedContent
-getSnowSoundR, getSiteMapR, getAvalancheSoundR, getStyleR, getBulmaR :: Handler TypedContent
+getSnowSoundR, getSiteMapR, getAvalancheSoundR, getStyleR, getBulmaR, getFlakeSvgR :: Handler TypedContent
+getFlakeSvgR = sendStaticBs typeSvg $(includeFile "assets/flake.svg")
 getFaviconR = sendStaticBs typeSvg $(includeFile "assets/favicon.svg")
 getGitHubR = sendStaticBs typeSvg $(includeFile "assets/github.svg")
 getFlushSoundR = sendStaticBs mp3Mime $(includeFile "assets/flush.mp3")
@@ -181,6 +183,13 @@ getPublicationR =
     metaTags
     navBar
     [whamlet|
+      <div id=aniflakes>
+        <img class="ani fall1" src="flake.svg">
+        <img class="ani fall2" src="flake.svg">
+        <img class="ani fall3" src="flake.svg">
+        <img class="ani fall4" src="flake.svg">
+
+      <img class="ani ani-fall" src="/flake.svg">
       <section class="section pt-4">
         <h1 class="title is-4 mb-3">
           Nix Flake Publication
@@ -332,7 +341,7 @@ getFlakeR fu = do
                         <li>Fetched
                         <li>Indexed - flake is discoverable by search request
                       <p>
-                        <a href=@Stats>Average processing time
+                        <a href=@{StatsR}>Average processing time
                 <tr>
                   <td>
                     Timestamp

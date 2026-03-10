@@ -122,6 +122,16 @@ const searchFlakesBy = (pattern) => {
 const rewriteUrlToGithubLink = (url) =>
       url.replace(/^https:[/]{2}github[.]com[/]/, "github:");
 
+const startSnowfall = () => {
+  const aniflakes = document.getElementById("aniflakes");
+  aniflakes.className = "ani-run";
+};
+
+const stopSnowfall = () => {
+  const aniflakes = document.getElementById("aniflakes");
+  aniflakes.className = "";
+};
+
 const submitFlake = (url) => {
   const badUrl = document.getElementById("bad-url");
 
@@ -131,7 +141,7 @@ const submitFlake = (url) => {
     badUrl.className = "";
     return false;
   }
-
+  startSnowfall();
   console.log(`Sumbitting flake ${url}`);
 
   const sumbittedNotification = document.getElementById("sumbitted-notification");
@@ -168,11 +178,13 @@ const submitFlake = (url) => {
         break;
       case "BadFlake":
       default:
+        stopSnowfall();
         errorOutput.innerText = flake.error;
         errorOutputHid.className = '';
       }
     },
     (err) => {
+      stopSnowfall();
       errorOutput.innerText = `Submition of flake ${url} has failed: ${err}`;
       errorOutputHid.className = '';
     }

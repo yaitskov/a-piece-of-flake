@@ -21,6 +21,16 @@ description:
     > $ cabal build
     > $ cabal test
     
+    === Update cachix
+    #update-cachix#
+    
+    > nix build --no-link --print-out-paths | cachix push piece-of-flake
+    
+    ==== Cachix public key
+    #cachix-public-key#
+    
+    > piece-of-flake.cachix.org-1:JamWDEABLpvWhGHIK7Xn/qYFbdZqb6ne7IAF62fXyFY=
+    
     == Release
     #release#
     
@@ -87,6 +97,7 @@ extra-source-files:
     assets/github.svg
     assets/sitemap.xml
     assets/github.svg
+    assets/flake.svg
     assets/app.js
     assets/style.css
     assets/bulma.min.css

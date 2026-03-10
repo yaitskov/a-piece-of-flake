@@ -18,6 +18,7 @@ extra-source-files:
     assets/github.svg
     assets/sitemap.xml
     assets/github.svg
+    assets/flake.svg
     assets/app.js
     assets/style.css
     assets/bulma.min.css

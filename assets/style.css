@@ -12,6 +12,78 @@
     initial-value: #7ebae4;
 }
 
+@keyframes bounce {
+    from {
+        transform: translateX(-50vw);
+    }
+    to {
+        transform: translateX(50vw);
+    }
+}
+
+.ani-run .ani {
+    position: fixed;
+    z-index: 111;
+    display: block;
+    animation-play-state: running;
+    animation-delay: 0s;
+    animation-direction: normal;
+    animation-iteration-count: infinite;
+    animation-timing-function: cubic-bezier(0, 0.38, 1, 1);
+}
+.ani {
+    display: none;
+    width: 7vh;
+    height: 7vh;
+    animation-play-state: paused;
+}
+
+@keyframes fall1 {
+    from {
+        transform: translateY(-6vh) translateX(-6vw);
+        opacity: 1;
+    }
+    to {
+        transform: translateY(100vh) translateX(10vw) rotate(360deg);
+        opacity: 0;
+    }
+}
+@keyframes fall2 {
+    from {
+        transform: translateY(-6vh) translateX(16vw);
+        opacity: 1;
+    }
+    to {
+        transform: translateY(100vh) translateX(30vw) rotate(360deg);
+        opacity: 0;
+    }
+}
+@keyframes fall3 {
+    from {
+        transform: translateY(-6vh) translateX(44vw);
+        opacity: 1;
+    }
+    to {
+        transform: translateY(100vh) translateX(70vw) rotate(-360deg);
+        opacity: 0;
+    }
+}
+@keyframes fall4 {
+    from {
+        transform: translateY(-6vh) translateX(90vw);
+        opacity: 1;
+    }
+    to {
+        transform: translateY(100vh) translateX(70vw) rotate(-360deg);
+        opacity: 0;
+    }
+}
+
+.fall1 { animation-duration: 3s; animation-name: fall1;  }
+.fall2 { animation-duration: 2.2s; animation-name: fall2;  }
+.fall3 { animation-duration: 3.4s; animation-name: fall3;  }
+.fall4 { animation-duration: 2.7s; animation-name: fall4; animation-delay: 0.3s; }
+
 .navbar .navbar-brand a.navbar-item {
     color: var(--navy-logo-color);
 }
