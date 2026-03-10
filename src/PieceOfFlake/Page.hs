@@ -511,4 +511,4 @@ postFindFlakesR = do
   Ypp { repo } <- getYesod
   requireCheckJsonBody >>= go repo
   where
-    go repo = findFlakes repo.flakes repo.flakeIndex
+    go repo = findFlakes repo.repoStats repo.flakes repo.flakeIndex

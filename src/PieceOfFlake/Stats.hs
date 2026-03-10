@@ -47,6 +47,7 @@ data RepoStatsF f
   , meanIndexTime :: Columnar f (RingBuffer Vector) NominalDiffTime
   , meanTimeInFetchQueue :: Columnar f (RingBuffer Vector) NominalDiffTime
   , meanTimeInIndexQueue :: Columnar f (RingBuffer Vector) NominalDiffTime
+  , meanSearchTime :: Columnar f (RingBuffer Vector) NominalDiffTime
   , submittedFlakes :: Columnar f TVar Int
   , fetchingFlakes :: Columnar f TVar Int
   , badFlakes :: Columnar f TVar Int
@@ -60,6 +61,7 @@ mkRepoStats (unrefine . coerce -> rbs) =
   liftIO $
     RepoStats <$>
       newTVarIO 0 <*>
+      RB.new rbs <*>
       RB.new rbs <*>
       RB.new rbs <*>
       RB.new rbs <*>
@@ -101,6 +103,9 @@ renderRepoStats searchRequests idxQueueLen (Tagged fetchQueueLen) rs =
             <tr>
               <td>Search requests
               <td>#{searchRequests}
+            <tr>
+              <td>Mean search time
+              <td>#{rs.meanSearchTime}
             <tr>
               <td>Submitted Flakes
               <td>#{rs.submittedFlakes}

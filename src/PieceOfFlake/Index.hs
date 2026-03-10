@@ -37,7 +37,7 @@ import PieceOfFlake.Stm
 import StmContainers.Map ( insert, listTNonAtomic, lookup, Map )
 import PieceOfFlake.Stats
     ( RepoStatsF(meanTimeInIndexQueue, fetchedFlakes, indexedFlakes,
-                 meanIndexTime),
+                 meanIndexTime, meanSearchTime),
       addTimeDif )
 import PieceOfFlake.TotalMath ( notZero, divNz, realToFracNz )
 
@@ -201,18 +201,19 @@ listQueryCache fi =
   reverse . fmap (^._1) . sortWith (^._2) . PSQ.toList . LRU.lruQueue <$> readTVarIO fi.queryCache
 
 findFlakes :: PoF m =>
-  Map FlakeUrl Flake -> FlakeIndex -> FlakeSearchReq -> m [ FlakeUrl ]
-findFlakes fs fi FlakeSearchReq { searchPattern = ps } =
+  RepoStatsF TVar -> Map FlakeUrl Flake -> FlakeIndex -> FlakeSearchReq -> m [ FlakeUrl ]
+findFlakes rs fs fi FlakeSearchReq { searchPattern = ps } =
   case concatMap tokenize ps of
     [] -> justLoadFirstNFlakes fs 30
     pst@(t1:_) -> do
-      now <- mkUtcBox <$> getCurrentTime
-      atomicalog (fromIdx now t1 pst)
+      now <- getCurrentTime
+      atomicalog (fromIdx now t1 pst) <*
+        (addTimeDif rs.meanSearchTime . (`diffUTCTime` now) =<< getTimeAfter now)
   where
     fromIdx now t1 pst = do
       se <- lift $ do
         modifyTVar' fi.searchRequestCounter (1 +)
-        modifyTVar' fi.queryCache (LRU.insert (unwords ps) now)
+        modifyTVar' fi.queryCache (LRU.insert (unwords ps) (mkUtcBox now))
         readTVar fi.searchEngine
       $(logInfo) $ "Search flakes by " <> show pst
       let r  = query se pst `alt` (fmap fst . snd $ queryAutosuggest se NoFilter [] t1)
