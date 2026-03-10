@@ -120,3 +120,9 @@ instance ToTypedContent Flake where
 isIndexed :: Flake -> Bool
 isIndexed FlakeIndexed {} = True
 isIndexed _ = False
+
+linkUrl :: FlakeUrl -> Text
+linkUrl (FlakeUrl (T.stripPrefix "github:" -> Just s)) =
+  "https://github.com/" <> s
+linkUrl (FlakeUrl s) =
+  "#not-gh-link-" <> s

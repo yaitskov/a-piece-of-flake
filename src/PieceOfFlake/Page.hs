@@ -9,6 +9,7 @@ import PieceOfFlake.CmdArgs
 import PieceOfFlake.Flake
     ( FlakeUrl,
       Flake(..),
+      linkUrl,
       IpAdr(IpAdr),
       MetaFlake(description, packages, rev),
       PackageInfo(broken, name, description, license, unfree) )
@@ -263,9 +264,10 @@ getFlakeR fu = do
               <tbody>
                 <tr>
                   <td>
-                    Url
+                    Link
                   <td>
-                    #{flakeUrl}
+                    <a href="#{linkUrl flakeUrl}">
+                      #{flakeUrl}
                 <tr>
                   <td>
                     Status
@@ -273,13 +275,15 @@ getFlakeR fu = do
                     <details>
                       <summary class="notification is-info p-1">
                         Submitted
-                      The request for flake publication is accepted.
-                      Request status life-cycle:
+                      <p>The request for flake publication is accepted.
+                      <p>Request status life-cycle:
                       <ul>
                         <li>Submitted
                         <li>On Fetcher
                         <li>Fetched
                         <li>Indexed - flake is discoverable by search request
+                      <p>
+                        <a href=@Stats>Average processing time
                 <tr>
                   <td>
                     Timestamp
