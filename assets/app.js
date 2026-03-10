@@ -58,6 +58,16 @@ const ready = () => {
   const navBarBurgerCss = navBarBurger.className;
   const navBarMenu = document.querySelector('#navbar-menu');
   const navBarMenuCss = navBarMenu.className;
+  const flakeState = document.querySelector('#flake-is-not-indexed');
+
+  if (flakeState) {
+    document.addEventListener("visibilitychange", (event) => {
+      if (document.visibilityState == "visible") {
+        window.location.reload();
+      }
+    });
+  }
+
 
   navBarBurger.addEventListener(
     "click", (e) => {

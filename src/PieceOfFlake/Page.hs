@@ -309,6 +309,9 @@ getFlakeR fu = do
             ^{fw}
             |]
   where
+    flakeNotIndexed =
+      [hamlet|<div id=flake-is-not-indexed>
+             |]
     flakeNotFound =
       [hamlet|
              <div class="notification is-danger">
@@ -318,6 +321,7 @@ getFlakeR fu = do
       case f of
         SubmittedFlake { flakeUrl, submittedAt, submittedFrom } ->
           [hamlet|
+            ^{flakeNotIndexed}
             <table class=table>
               <tbody class=content>
                 <tr>
@@ -355,6 +359,7 @@ getFlakeR fu = do
                 |]
         FlakeIsBeingFetched { flakeUrl, submitionFetchedAt, fetcherId } ->
           [hamlet|
+            ^{flakeNotIndexed}
             <table class=table>
               <tbody class=content>
                 <tr>
@@ -417,6 +422,7 @@ getFlakeR fu = do
             ps :: [PackageInfo] = concatMap elems (elems meta.packages)
           in
              [hamlet|
+               ^{flakeNotIndexed}
                <table class=table>
                  <tbody class=content>
                    <tr>
