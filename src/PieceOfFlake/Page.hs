@@ -261,7 +261,7 @@ getFlakeR fu = do
         SubmittedFlake { flakeUrl, submittedAt, submittedFrom } ->
           [hamlet|
             <table class=table>
-              <tbody>
+              <tbody class=content>
                 <tr>
                   <td>
                     Link
@@ -298,7 +298,7 @@ getFlakeR fu = do
         FlakeIsBeingFetched { flakeUrl, submitionFetchedAt, fetcherId } ->
           [hamlet|
             <table class=table>
-              <tbody>
+              <tbody class=content>
                 <tr>
                   <td>
                     Url
@@ -311,8 +311,8 @@ getFlakeR fu = do
                     <details>
                       <summary class="notification is-info p-1">
                         On Fetcher
-                      Fetcher (Worker) picked up the request
-                      for downloadand evaluation of the flake.
+                      <p>Fetcher (Worker) picked up the request
+                         for downloadand evaluation of the flake.
                 <tr>
                   <td>
                     Timestamp
@@ -327,7 +327,7 @@ getFlakeR fu = do
         BadFlake { flakeUrl, fetcherRespondedAt, error } ->
           [hamlet|
             <table class=table>
-              <tbody>
+              <tbody class=content>
                 <tr>
                   <td>
                     Url
@@ -340,9 +340,9 @@ getFlakeR fu = do
                     <details>
                       <summary class="notification is-danger p-1">
                         Rejected
-                      Fetcher failed to obtain flake or parse it.
-                      Check flake url and error message.
-                      Fix the issue and resubmit the flake for publication.
+                      <p>Fetcher failed to obtain flake or parse it.
+                      <p>Check flake url and error message.
+                      <p>Fix the issue and resubmit the flake for publication.
                 <tr>
                   <td>
                     Timestamp
@@ -360,7 +360,7 @@ getFlakeR fu = do
           in
              [hamlet|
                <table class=table>
-                 <tbody>
+                 <tbody class=content>
                    <tr>
                      <td>
                        Url
@@ -373,8 +373,8 @@ getFlakeR fu = do
                        <details>
                          <summary class="notification is-warning p-1">
                            Fetched
-                         Information about the flake is fetched by fetcher
-                         and uploaded into database for consequent indexing.
+                         <p>Information about the flake is fetched by fetcher
+                            and uploaded into database for consequent indexing.
                    <tr>
                      <td>
                        Timestamp
@@ -395,7 +395,7 @@ getFlakeR fu = do
           in
              [hamlet|
                <table class=table>
-                 <tbody>
+                 <tbody class=content>
                    <tr>
                      <td>
                        Url
@@ -408,7 +408,8 @@ getFlakeR fu = do
                        <details>
                          <summary class="notification is-success p-1">
                            Indexed
-                         The flake has been indexed and now is discoverable by search
+                         <p>
+                           The flake has been indexed and now is discoverable by search
                    <tr>
                      <td>
                        Timestamp
