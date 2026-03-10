@@ -6,14 +6,12 @@ import Data.RingBuffer as RB ( RingBuffer, append, new, toList )
 import Data.Vector as V ( Vector, fromList )
 import Generics.SOP as S
 import PieceOfFlake.CmdArgs ( RingBufferSize(..) )
-import PieceOfFlake.Prelude hiding (NominalDiffTime)
+import PieceOfFlake.Prelude
 import PieceOfFlake.Prelude qualified as P
-import PieceOfFlake.UtcTime as U ( NominalDiffTime )
 import Statistics.Sample as SS ( mean )
 import Text.Blaze.Internal ( MarkupM )
 import Text.Blaze ( ToMarkup(toMarkup) )
 import Yesod.Core ( hamlet )
-
 
 class ReadTVar a b where
   readTraVar :: MonadIO m => a -> m b

@@ -23,6 +23,10 @@
       url = "github:yaitskov/ring-buffer";
       flake = false;
     };
+    non-negative-time-diff = {
+      url = "github:yaitskov/non-negative-time-diff";
+      flake = false;
+    };
   };
   outputs = inputs@{ self, nixpkgs, flake-utils, uphack, c, ... }:
     flake-utils.lib.eachDefaultSystem (system:
@@ -48,6 +52,7 @@
               (final.callCabal2nix "hnix-store-remote" "${inputs.hnix-store}/hnix-store-remote" { });
           hnix = dontCheck (final.callCabal2nix "hnix" inputs.hnix { });
           ring-buffer = (final.callCabal2nix "ring-buffer" inputs.ring-buffer { });
+          non-negative-time-diff = (final.callCabal2nix "non-negative-time-diff" inputs.non-negative-time-diff { });
         };
         mkStatic = pkName:
           let

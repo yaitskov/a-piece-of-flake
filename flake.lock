@@ -149,6 +149,22 @@
         "type": "github"
       }
     },
+    "non-negative-time-diff": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1773064079,
+        "narHash": "sha256-TRqjwOCf5Ka/9s2Idi6JvoONZ2at9oaqmb1lcbxq/7c=",
+        "owner": "yaitskov",
+        "repo": "non-negative-time-diff",
+        "rev": "4b67a14726612846e53178f74441379d2babe0f2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "yaitskov",
+        "repo": "non-negative-time-diff",
+        "type": "github"
+      }
+    },
     "ring-buffer": {
       "flake": false,
       "locked": {
@@ -173,6 +189,7 @@
         "hnix": "hnix",
         "hnix-store": "hnix-store",
         "nixpkgs": "nixpkgs_2",
+        "non-negative-time-diff": "non-negative-time-diff",
         "ring-buffer": "ring-buffer",
         "te": "te",
         "uphack": "uphack_2"

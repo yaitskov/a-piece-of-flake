@@ -40,7 +40,7 @@ source-repository head
 
 common base
   default-language: GHC2024
-  ghc-options: -Wall  -fplugin GHC.TypeLits.Normalise
+  ghc-options: -Wall
   default-extensions:
     DefaultSignatures
     DuplicateRecordFields
@@ -60,6 +60,7 @@ common base
 
 library
   import: base
+  ghc-options: -fplugin GHC.TypeLits.Normalise
   hs-source-dirs: src
   exposed-modules:
     PieceOfFlake.Acid
@@ -76,7 +77,6 @@ library
     PieceOfFlake.Stm
     PieceOfFlake.Th
     PieceOfFlake.TotalMath
-    PieceOfFlake.UtcTime
     PieceOfFlake.Yesod
   other-modules:
     Paths_a_piece_of_flake
@@ -110,6 +110,7 @@ library
     , mtl                     < 3
     , network                 < 4
     , non-empty               < 1
+    , non-negative-time-diff  < 1
     , prettyprinter           < 2
     , process                 < 2
     , psqueues                < 1
@@ -141,7 +142,7 @@ library
 
 executable a-piece-of-flake
   import: base
-  ghc-options: -Wall -threaded
+  ghc-options: -threaded
   main-is: PieceOfFlake.hs
   hs-source-dirs: app
   build-depends:
