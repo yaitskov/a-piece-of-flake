@@ -155,6 +155,8 @@ contentEncodingToHeaderValue = \case
   Gzip -> "gzip"
   Br -> "br"
 
+-- to customize Accpet-Encoding in Firefox:
+-- open tab about:config  -> network.http.accept-encoding.secure
 parseContentEncoding :: Monad m => ByteString -> (Maybe ContentEncoding -> m a) -> m a
 parseContentEncoding ce cb = go Nothing "" ce
   where
