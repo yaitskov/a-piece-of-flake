@@ -150,7 +150,9 @@
           inputsFrom = map (__getAttr "env") (__attrValues self.packages.${system});
           shellHook = ''
             export PS1='N$ '
-            . scripts/*.sh
+            for i in scripts/*.sh ; do
+              . $i
+            done
             echo $(dirname $(dirname $(which ghc)))/share/doc > .haddock-ref
           '';
         };

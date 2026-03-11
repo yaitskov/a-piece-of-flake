@@ -16,7 +16,11 @@ function extractCssClasses() {
 #
 function stripCss() {
     rm -rf stripped
-    ./node_modules/.bin/purgecss -css assets/bulma.min.css -v $(extractCssClasses) -o stripped
+    mkdir stripped
+    touch stripped/index.html
+    ./node_modules/.bin/purgecss -css assets/bulma.min.css -con stripped/index.html \
+                                 -v -s span \
+                                 $(extractCssClasses) -o stripped
     cp stripped/bulma.min.css assets/bulma.min.css
     rm -rf stripped
 }
