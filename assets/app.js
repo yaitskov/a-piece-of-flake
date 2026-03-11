@@ -84,9 +84,6 @@ const ready = () => {
 
 document.addEventListener("DOMContentLoaded", ready);
 
-const flush = Math.random() >= 0.5 ? new Audio("/snow.mp3")
-      : (Math.random() >= 0.5  ?  new Audio("/avalanche.mp3") : new Audio("/flush.mp3"));
-
 const tokenize = s => s.split(/[ \t\n]/).filter(w => w.length > 0);
 
 const flakeViewUrl = (fu) => `/flake/${encodeURIComponent(fu)}`;
@@ -152,6 +149,9 @@ const submitFlake = (url) => {
     return false;
   }
   startSnowfall();
+  const sound = Math.random() >= 0.5 ? new Audio("/snow.mp3")
+      : (Math.random() >= 0.5  ?  new Audio("/avalanche.mp3") : new Audio("/flush.mp3"));
+
   console.log(`Sumbitting flake ${url}`);
 
   const sumbittedNotification = document.getElementById("sumbitted-notification");
@@ -172,10 +172,10 @@ const submitFlake = (url) => {
       case "SubmittedFlake":
       case "FlakeIsBeingFetched":
         /* play sound */
-        flush.onended = (e) => {
+        sound.onended = (e) => {
           window.location = flakeViewUrl(url);
         };
-        flush.play();
+        sound.play();
         flakeLink.setAttribute('href', flakeViewUrl(url));
         sumbittedNotification.className = "";
         break;
