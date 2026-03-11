@@ -48,6 +48,7 @@ data WsCmdArgs
     , indexQueryCacheSize :: Tagged IndexQueryCacheSize Word
     , ringBufferSize :: RingBufferSize
     , badFlakeMaxAge :: Tagged BadFlakeMaxAge Second
+    , allowResubmitIndexedFlakeIn :: Tagged ResubmitPeriod NominalDiffTime
     }
   deriving Show
 
@@ -79,7 +80,8 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
       certKeyO <*> acidOption <*> cacheSecondsO <*>
       baseUrlO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
       allowResubmitBadFlakeInO <*> logLevelO <*>
-      indexQueryCacheSizeO <*> ringBufferSizeO <*> badFlakeMaxAgeO)
+      indexQueryCacheSizeO <*> ringBufferSizeO <*> badFlakeMaxAgeO <*>
+      allowResubmitIndexedFlakeInO)
     fetcherP = FetcherJob <$> (FetcherCmdArgs <$> urlOption <*> rawNixCacheO <*>
       customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
       rawNixCacheMaxAgeO @RawNixCacheMaxAge (7 * 24 * 3600) <*>
@@ -106,6 +108,15 @@ allowResubmitBadFlakeInO = Tagged <$>
     <> showDefault
     <> value 600
     <> help "how soon bad flake can be resubmitted"
+  )
+
+allowResubmitIndexedFlakeInO :: Parser (Tagged ResubmitPeriod NominalDiffTime)
+allowResubmitIndexedFlakeInO = Tagged <$>
+  option auto
+  ( long "resubmit-indexed-flake-interval"
+    <> showDefault
+    <> value (toNominal (2 :: Hour))
+    <> help "how soon an indexed flake can be resubmitted"
   )
 
 logLevelO :: Parser LogLevel

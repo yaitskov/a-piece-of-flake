@@ -9,10 +9,12 @@ import PieceOfFlake.Flake
       MetaFlake,
       IpAdr,
       FetcherId,
-      Flake(fetcherRespondedAt, SubmittedFlake, flakeUrl, submittedAt,
-            FlakeIsBeingFetched, BadFlake, FlakeFetched) )
+      Flake(indexedAt, FlakeIndexed, SubmittedFlake, submittedAt,
+            FlakeIsBeingFetched, FlakeFetched, flakeUrl, BadFlake,
+            fetcherRespondedAt) )
 import PieceOfFlake.CmdArgs
-    ( WsCmdArgs(allowResubmitBadFlakeIn, badFlakeMaxAge),
+    ( WsCmdArgs(allowResubmitIndexedFlakeIn, badFlakeMaxAge,
+                allowResubmitBadFlakeIn),
       FetcherSecret,
       NoSubmitionHeartbeatSec )
 import PieceOfFlake.Index ( FlakeIndex, indexNewFlake )
@@ -67,10 +69,19 @@ trySubmitFlakeToRepo ip fr fu = do
         (\fra -> do
             now <- lift $ getTimeAfter fra
             if now `diffUTCTime` fra > untag fr.wsArgs.allowResubmitBadFlakeIn then do
-              $(logInfo) $ "Resubmit flake " <> P.show fu
+              $(logInfo) $ "Resubmit bad flake " <> P.show fu
               submitFlakeToRepo $ mkUtcBox now
             else
               pure . Left $ "Flake resubmitted within " <> P.show (untag fr.wsArgs.allowResubmitBadFlakeIn))
+      Just fi@FlakeIndexed {} ->
+        doAfter fi.indexedAt
+        (\fra -> do
+            now <- lift $ getTimeAfter fra
+            if now `diffUTCTime` fra > untag fr.wsArgs.allowResubmitIndexedFlakeIn then do
+              $(logInfo) $ "Resubmit indexed flake " <> P.show fu
+              submitFlakeToRepo $ mkUtcBox now
+            else
+              pure . Left $ "Indexed flake resubmitted within " <> P.show (untag fr.wsArgs.allowResubmitIndexedFlakeIn))
       Just f ->
         pure $ Right f
   where
