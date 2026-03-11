@@ -223,9 +223,11 @@ getPublicationR =
                  Url does not fit the pattern:
                  <ul>
                    <li>
-                     <b>github:owner/project
+                     <p>
+                       github:owner/project
                    <li>
-                     <b>https://github.com/owner/project
+                     <p>
+                       https://github.com/owner/project
             <div class=field>
               <div id=sumbitted-notification class=is-hidden>
                 <div class="notification is-success">

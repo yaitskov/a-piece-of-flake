@@ -133,3 +133,8 @@ img.github {
     opacity: 0.8;
     padding-top: 5vh;
 }
+
+.content p {
+    overflow-wrap: break-word;
+    text-wrap: pretty;
+}
