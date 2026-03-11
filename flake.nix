@@ -144,11 +144,13 @@
             cabal-install
             pandoc
             openssl
+            brotli
             (import uphack { inherit pkgs; })
           ]);
           inputsFrom = map (__getAttr "env") (__attrValues self.packages.${system});
           shellHook = ''
             export PS1='N$ '
+            . scripts/*.sh
             echo $(dirname $(dirname $(which ghc)))/share/doc > .haddock-ref
           '';
         };

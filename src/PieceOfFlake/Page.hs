@@ -21,17 +21,11 @@ import PieceOfFlake.Flake.Repo
       popFlakeSubmition,
       addFetchedFlake,
       validateRawFlakeUrl )
-
 import PieceOfFlake.Index ( findFlakes, listQueryCache, FlakeIndex (searchRequestCounter, indexerQueueLen) )
 import PieceOfFlake.Prelude hiding (Map, error, pi, Handler)
 import PieceOfFlake.Stats
 import PieceOfFlake.Th ( includeFile )
 import PieceOfFlake.Yesod
-    ( Ts(Ts),
-      mp3Mime,
-      bulmaLayout,
-      clientAdrToDec4,
-      getClientAdr )
 import StmContainers.Map ( lookup )
 import Text.Blaze.Internal ( MarkupM )
 import Yesod.Core
@@ -79,29 +73,44 @@ instance Yesod Ypp where
   shouldLogIO (Ypp {repo}) _ l =
     pure $ l >= repo.wsArgs.logLevel
 
-setCacheHeaderForStatic :: Handler ()
-setCacheHeaderForStatic = do
-  Ypp { staticCache } <- getYesod
-  cacheSeconds . fromIntegral $ untag staticCache
-
-sendStaticBs :: ToContent a => ByteString -> a -> Handler TypedContent
-sendStaticBs mime c = do
-  setCacheHeaderForStatic
-  pure . TypedContent mime $ toContent c
 
 getAppJsR, getFaviconR, getRobotsR, getGitHubR, getFlushSoundR :: Handler TypedContent
 getSnowSoundR, getSiteMapR, getAvalancheSoundR, getStyleR, getBulmaR, getFlakeSvgR :: Handler TypedContent
-getFlakeSvgR = sendStaticBs typeSvg $(includeFile "assets/flake.svg")
-getFaviconR = sendStaticBs typeSvg $(includeFile "assets/favicon.svg")
-getGitHubR = sendStaticBs typeSvg $(includeFile "assets/github.svg")
+getFlakeSvgR =
+  staticFile (Mime typeSvg) $(includeFile "assets/flake.svg") $ fromList
+    [ (Gzip, $(includeFile "assets/flake.svg.gz"))
+    , (Br, $(includeFile "assets/flake.svg.br"))
+    ]
+getFaviconR =
+  staticFile (Mime typeSvg) $(includeFile "assets/favicon.svg") $ fromList
+    [ (Gzip, $(includeFile "assets/favicon.svg.gz"))
+    , (Br, $(includeFile "assets/favicon.svg.br"))
+    ]
+getGitHubR =
+  staticFile (Mime typeSvg) $(includeFile "assets/github.svg") $ fromList
+    [ (Gzip, $(includeFile "assets/github.svg.gz"))
+    , (Br, $(includeFile "assets/github.svg.br"))
+    ]
+getAppJsR =
+  staticFile (Mime typeJavascript) $(includeFile "assets/app.js") $ fromList
+    [ (Gzip, $(includeFile "assets/app.js.gz"))
+    , (Br, $(includeFile "assets/app.js.br"))
+    ]
+getStyleR =
+  staticFile (Mime typeCss) $(includeFile "assets/style.css") $ fromList
+    [ (Gzip, $(includeFile "assets/style.css.gz"))
+    , (Br, $(includeFile "assets/style.css.br"))
+    ]
+getBulmaR =
+  staticFile (Mime typeCss) $(includeFile "assets/bulma.min.css") $ fromList
+    [ (Gzip, $(includeFile "assets/bulma.min.css.gz"))
+    , (Br, $(includeFile "assets/bulma.min.css.br"))
+    ]
 getFlushSoundR = sendStaticBs mp3Mime $(includeFile "assets/flush.mp3")
 getSnowSoundR = sendStaticBs mp3Mime $(includeFile "assets/snow.mp3")
 getAvalancheSoundR = sendStaticBs mp3Mime $(includeFile "assets/avalanche.mp3")
-getSiteMapR = sendStaticBs typeXml $(includeFile "assets/sitemap.xml")
-getRobotsR = sendStaticBs typePlain $(includeFile "assets/robots.txt")
-getAppJsR = sendStaticBs typeJavascript $(includeFile "assets/app.js")
-getStyleR = sendStaticBs typeCss $(includeFile "assets/style.css")
-getBulmaR = sendStaticBs typeCss $(includeFile "assets/bulma.min.css")
+getSiteMapR = sendStaticBs (Mime typeXml) $(includeFile "assets/sitemap.xml")
+getRobotsR = sendStaticBs (Mime typePlain) $(includeFile "assets/robots.txt")
 
 instance ClockMonad (HandlerFor Ypp) where
   getCurrentTime = liftIO getCurrentTime

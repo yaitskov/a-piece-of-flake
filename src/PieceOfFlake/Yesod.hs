@@ -4,16 +4,23 @@ module PieceOfFlake.Yesod where
 
 import Data.Binary.Builder (fromByteString)
 import Data.ByteString qualified as BS
+import Data.ByteString.Char8 qualified as B8
+import Data.Map.Strict qualified as M
 import Data.Text (intercalate)
+import GHC.Records ( HasField )
 import Network.HTTP.Types qualified as H
+import Network.HTTP.Types.Header ( hAcceptEncoding )
 import Network.Socket (SockAddr(SockAddrInet), hostAddressToTuple, tupleToHostAddress, HostAddress)
 import Network.Wai ( Request(remoteHost) )
+import PieceOfFlake.CmdArgs ( StaticCacheSeconds )
 import PieceOfFlake.Prelude
 import Text.Blaze ( ToMarkup(toMarkup) )
 import Text.Show qualified as TS
 import Text.Regex.TDFA ( AllTextSubmatches(getAllTextSubmatches), (=~) )
 import Yesod.Core
     ( hamlet,
+      getYesod,
+      cacheSeconds,
       widgetToPageContent,
       typeSvg,
       getMessages,
@@ -28,7 +35,7 @@ import Yesod.Core
       HandlerFor,
       PageContent(pageBody, pageTitle, pageDescription, pageHead),
       TypedContent(TypedContent),
-      WidgetFor )
+      WidgetFor, lookupHeader, addHeader )
 
 
 newtype HostIp = HostIp HostAddress deriving newtype (Eq, Ord)
@@ -100,9 +107,8 @@ instance ToContent FavIcon where
 instance ToTypedContent FavIcon where
   toTypedContent = TypedContent typeSvg . toContent
 
-
-mp3Mime :: ByteString
-mp3Mime = "audio/mpeg"
+mp3Mime :: Mime
+mp3Mime = Mime "audio/mpeg"
 
 bulmaLayout :: Yesod site => WidgetFor site () -> HandlerFor site Html
 bulmaLayout w = do
@@ -128,3 +134,60 @@ newtype Ts = Ts { unTs :: UtcBox } deriving newtype (Show, Eq, Ord)
 
 instance ToMarkup Ts where
   toMarkup = toMarkup . show @Text . unTs
+
+type HasCacheField y = (HasField "staticCache" y (Tagged StaticCacheSeconds Word32), Yesod y)
+setCacheHeaderForStatic :: HasCacheField y => HandlerFor y ()
+setCacheHeaderForStatic = do
+  y <- getYesod
+  cacheSeconds . fromIntegral $ untag y.staticCache
+
+newtype Mime = Mime ByteString
+
+sendStaticBs :: (HasCacheField y, ToContent a) => Mime -> a -> HandlerFor y TypedContent
+sendStaticBs (Mime mime) c = do
+  setCacheHeaderForStatic
+  pure . TypedContent mime $ toContent c
+
+data ContentEncoding = Gzip | Br deriving (Show, Eq, Ord)
+
+contentEncodingToHeaderValue :: ContentEncoding -> Text
+contentEncodingToHeaderValue = \case
+  Gzip -> "gzip"
+  Br -> "br"
+
+parseContentEncoding :: Monad m => ByteString -> (Maybe ContentEncoding -> m a) -> m a
+parseContentEncoding ce cb = go Nothing "" ce
+  where
+    go bestMatch en bs =
+      case B8.uncons bs of
+        Nothing ->
+          case en of
+            "gzip" -> cb $ bestMatch <|> pure Gzip
+            "br" -> cb $ pure Br
+            _ -> cb bestMatch
+        Just (',', bs') ->
+          case en of
+            "gzip" -> go (Just Gzip) "" (B8.drop 1 bs')
+            "br" -> cb $ pure Br
+            _ -> go bestMatch "" (B8.drop 1 bs')
+        Just (c, bs') ->
+          go bestMatch (en `B8.snoc` c) bs'
+
+staticFile :: (ToContent a, HasCacheField y) => Mime -> a -> Map ContentEncoding a -> HandlerFor y TypedContent
+staticFile mime plainContent preEncodedContent = do
+  lookupHeader hAcceptEncoding >>= \case
+    Nothing -> sendStaticBs mime plainContent
+    Just ae -> parseContentEncoding ae $ \case
+      Nothing -> sendStaticBs mime plainContent
+      Just ce ->
+        case M.lookup ce preEncodedContent of
+          Nothing -> sendStaticBs mime plainContent
+          Just cnt -> do
+            addHeader "Content-Encoding" $ contentEncodingToHeaderValue ce
+            sendStaticBs mime cnt
+  -- addHeader :: MonadHandler m => Text -> Text -> m ()
+  -- replaceOrAddHeader :: MonadHandler m => Text -> Text -> m ()
+  -- lookupHeader :: MonadHandler m => CI ByteString -> m (Maybe ByteString)
+  -- get supported encodings
+  -- pick best
+  -- set Content-Encoding header

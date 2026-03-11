@@ -101,6 +101,25 @@ extra-source-files:
     assets/app.js
     assets/style.css
     assets/bulma.min.css
+    -- brotli
+    assets/favicon.svg.br
+    assets/github.svg.br
+    assets/sitemap.xml.br
+    assets/github.svg.br
+    assets/flake.svg.br
+    assets/app.js.br
+    assets/style.css.br
+    assets/bulma.min.css.br
+    -- gzipped
+    assets/favicon.svg.gz
+    assets/github.svg.gz
+    assets/sitemap.xml.gz
+    assets/github.svg.gz
+    assets/flake.svg.gz
+    assets/app.js.gz
+    assets/style.css.gz
+    assets/bulma.min.css.gz
+
     assets/robots.txt
     assets/flush.mp3
     assets/snow.mp3
