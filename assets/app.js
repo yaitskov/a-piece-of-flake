@@ -89,6 +89,7 @@ const tokenize = s => s.split(/[ \t\n]/).filter(w => w.length > 0);
 const flakeViewUrl = (fu) => `/flake/${encodeURIComponent(fu)}`;
 
 const searchFlakesBy = (pattern) => {
+  const searchHint = document.querySelector('#search-hint');
   const flakesTbody = document.querySelector('#search-results');
   const foundFlakes = document.querySelector('#found-flakes');
   const errorOutput = document.querySelector('#error-output');
@@ -105,8 +106,10 @@ const searchFlakesBy = (pattern) => {
     (foundflakeUrls) => {
       if (foundflakeUrls.length == 0) {
         noFlakesFound.className = "";
+        searchHint.parentNode.className = "";
       } else {
         foundFlakes.className = "";
+        searchHint.parentNode.className = "is-hidden";
       }
       for (const u in foundflakeUrls) {
         const tr = document.createElement("tr");

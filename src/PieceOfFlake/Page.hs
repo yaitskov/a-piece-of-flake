@@ -165,6 +165,11 @@ getSearchR =
                     <div class=control>
                       <button class="button is-black">Find</button>
                   <div class="field">
+                    <div>
+                      <p class="help notification is-info is-light" id=search-hint>
+                        Besides text from flake metadata the text index contains keywords:
+                        nixosModules, unfree, free, broken, and unbroken.
+                  <div class="field">
                     <div class="is-hidden">
                       <p class="help notification is-danger is-light" id=error-output>
                   <div class="field">
