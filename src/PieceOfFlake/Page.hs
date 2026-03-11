@@ -213,7 +213,7 @@ getPublicationR =
               <label class=label>Flake URL
               <div class=control>
                 <input type=text class=input name=url autofocus
-                       placeholder="github:yaitskov/add-dependent-file"/>
+                       placeholder="github:owner/repository"/>
             <div class="field is-grouped">
               <div class=control>
                 <button class="button is-black">Publish</button>
