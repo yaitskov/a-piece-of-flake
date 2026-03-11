@@ -149,6 +149,7 @@ library
     PieceOfFlake.Fetcher
     PieceOfFlake.Flake
     PieceOfFlake.Flake.Repo
+    PieceOfFlake.Http
     PieceOfFlake.Index
     PieceOfFlake.Page
     PieceOfFlake.Prelude
@@ -214,6 +215,7 @@ library
     , trace-embrace           >= 1.3 && < 2
     , vector                  < 1
     , wai                     < 4
+    , wai-extra               < 4
     , warp                    < 4
     , warp-tls                < 4
     , wl-pprint-text          < 2
