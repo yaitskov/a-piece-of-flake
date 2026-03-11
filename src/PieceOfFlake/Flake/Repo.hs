@@ -1,7 +1,7 @@
 module PieceOfFlake.Flake.Repo where
 
-import Control.Concurrent (threadDelay)
 import Data.Acid ( AcidState )
+import ListT qualified as L
 import PieceOfFlake.Acid ( AcidFlakes )
 import PieceOfFlake.Flake
     ( FlakeUrl(..),
@@ -12,7 +12,7 @@ import PieceOfFlake.Flake
       Flake(fetcherRespondedAt, SubmittedFlake, flakeUrl, submittedAt,
             FlakeIsBeingFetched, BadFlake, FlakeFetched) )
 import PieceOfFlake.CmdArgs
-    ( WsCmdArgs(allowResubmitBadFlakeIn),
+    ( WsCmdArgs(allowResubmitBadFlakeIn, badFlakeMaxAge),
       FetcherSecret,
       NoSubmitionHeartbeatSec )
 import PieceOfFlake.Index ( FlakeIndex, indexNewFlake )
@@ -23,7 +23,7 @@ import PieceOfFlake.Stats
                  fetchingFlakes, fetchedFlakes, meanFetchTime, submittedFlakes, meanTimeInFetchQueue),
       addTimeDif )
 import PieceOfFlake.Stm ( newTQueueIO, readTQueue, writeTQueue, TQueue, atomicalog )
-import StmContainers.Map ( insert, lookup, newIO, Map )
+import StmContainers.Map -- ( insert, lookup, newIO, Map )
 import Text.Regex.TDFA ( (=~) )
 
 
@@ -189,10 +189,10 @@ addFetchedFlake fr ftid (fu, fetchedFlake) = do
           $(logError) $ "Error flake " <> P.show fu <> " is missing in map"
           pure Nothing
 
-sendEmtpyFlakeSubmition ::
+sendEmptyFlakeSubmition ::
   PoF m => FlakeRepo -> Tagged NoSubmitionHeartbeatSec Second -> m ()
-sendEmtpyFlakeSubmition fr (Tagged d) = do
-  liftIO $ threadDelay $ fromIntegral (convertUnit d :: Microsecond)
+sendEmptyFlakeSubmition fr (Tagged d) = do
+  threadDelay d
   atomicalog $ do
     fql <- lift $ readTVar fr.fetcherQueueLen
     when (fql == 0) $ do
@@ -200,6 +200,29 @@ sendEmtpyFlakeSubmition fr (Tagged d) = do
       lift $ do
         writeTQueue fr.fetcherQueue Nothing
         modifyTVar' fr.fetcherQueueLen (1 +)
+
+selectBadOldFlakes :: MonadIO m => FlakeRepo -> m [ FlakeUrl ]
+selectBadOldFlakes fr =
+  liftIO (L.foldMaybe filterBad [] (listTNonAtomic fr.flakes))
+  where
+    filterBad selected = \case
+      (_, BadFlake { flakeUrl }) -> pure . Just $ flakeUrl : selected
+      _ -> pure Nothing
+
+removeOldBadFlakes :: PoF m => FlakeRepo -> m ()
+removeOldBadFlakes fr  = do
+  threadDelay $ untag fr.wsArgs.badFlakeMaxAge `div` 2
+  badFlakes <- selectBadOldFlakes fr
+  forM_ badFlakes $ \fu ->
+    atomicalog $ do
+      lift (lookup fu fr.flakes) >>= \case
+        Just bf@BadFlake {} ->
+          doAfter bf.fetcherRespondedAt $ \fra -> do
+             now <- getTimeAfter fra
+             when (now `diffUTCTime` fra > toNominal (untag fr.wsArgs.badFlakeMaxAge)) $ do
+               $(logInfo) $ "Delete old bad flake " <> P.show fu
+               lift $ delete fu fr.flakes
+        _ -> pure ()
 
 validateRawFlakeUrl :: RawFlakeUrl -> Maybe FlakeUrl
 validateRawFlakeUrl (RawFlakeUrl rfu) =

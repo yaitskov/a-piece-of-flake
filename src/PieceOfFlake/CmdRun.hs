@@ -1,23 +1,21 @@
 module PieceOfFlake.CmdRun where
 
 import Data.Version (showVersion)
-
-import PieceOfFlake.Acid
-    ( loadFromDb, openFlakeDb, runPersistQueue )
+import Paths_a_piece_of_flake ( version )
+import PieceOfFlake.Acid ( loadFromDb, openFlakeDb, runPersistQueue )
 import PieceOfFlake.CmdArgs
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
     ( FlakeRepo(flakeIndex, acidFlakes, acidQueue, repoStats, flakes),
-      mkFlakeRepo,
-      sendEmtpyFlakeSubmition )
-import PieceOfFlake.Http
+      mkFlakeRepo, removeOldBadFlakes,
+      sendEmptyFlakeSubmition )
+import PieceOfFlake.Http ( runWebService )
 import PieceOfFlake.Index
     ( mkFlakeIndex, loadIndexFromScratch, consumeIndexQueue )
 import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req ( setResponseTimeout )
 import PieceOfFlake.Stats ( mkRepoStats )
-import Paths_a_piece_of_flake ( version )
 import StmContainers.Map ( newIO )
 import UnliftIO.Concurrent ( forkFinally )
 import UnliftIO.Retry ( fibonacciBackoff, recoverAll )
@@ -50,12 +48,17 @@ launchBackgroundThreads period fr = do
         Right () -> $(logInfo) "Flake text search indexer thread without errors")
   $(logInfo) $ "Flake text search indexer thread is forked " <> show idxFlakeTid
   efsTid <- forkFinally
-    (forever $ sendEmtpyFlakeSubmition fr period)
+    (forever $ sendEmptyFlakeSubmition fr period)
     (\case
-        Left e -> $(logError) $ "Empty Submition Thead ended: " <> show e
-        Right () -> $(logInfo) "Empty Submition Thead ended without errors")
+        Left e -> $(logError) $ "Empty Submition thread ended: " <> show e
+        Right () -> $(logInfo) "Empty Submition thread ended without errors")
   $(logInfo) $ "Empty Submition thread is forked " <> show efsTid
-
+  obfTid <- forkFinally
+    (forever $ removeOldBadFlakes fr)
+    (\case
+        Left e -> $(logError) $ "Old Bad Flake Collector thread ended: " <> show e
+        Right () -> $(logInfo) "Old Bad Flake Collector thread ended without errors")
+  $(logInfo) $ "Old Bad Flake Collector thread is forked " <> show obfTid
 
 -- commented lines below are excuted via: @ghciwatch --enable-eval@
 -- $> import PieceOfFlake.CmdArgs

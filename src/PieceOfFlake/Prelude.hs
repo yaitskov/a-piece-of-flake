@@ -4,8 +4,11 @@ module PieceOfFlake.Prelude
   , toMs
   , PoF
   , alt
+  , threadDelay
+  , toNominal
   ) where
 
+import Control.Concurrent qualified as CC
 import Control.Exception as X (IOException)
 import Control.Lens as X ((^.), _2, _1)
 import Control.Monad.Catch as X (Handler (..))
@@ -33,3 +36,10 @@ type PoF m = (MonadLogger m, MonadIO m, MonadUnliftIO m, ClockMonad m)
 
 alt :: [a] -> [a] -> [a]
 alt a b = case a of [] -> b ; o -> o
+
+threadDelay :: (MonadIO m, TimeUnit tu) => tu -> m ()
+threadDelay d =
+  liftIO $ CC.threadDelay $ fromIntegral (convertUnit d :: Microsecond)
+
+toNominal :: TimeUnit tu => tu -> NominalDiffTime
+toNominal tu =  (fromIntegral (convertUnit tu :: Microsecond) :: NominalDiffTime) / 1_000_000

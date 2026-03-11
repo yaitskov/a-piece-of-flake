@@ -22,6 +22,7 @@ data BaseUrl
 data NoSubmitionHeartbeatSec
 data ResubmitPeriod
 type IndexQueryCacheSize = "index-query-cache-size"
+type BadFlakeMaxAge = "bad-flake-max-age"
 
 newtype RingBufferSize = RingBufferSize (Refined (FromTo 1 12) Int)
 
@@ -46,6 +47,7 @@ data WsCmdArgs
     , logLevel :: LogLevel
     , indexQueryCacheSize :: Tagged IndexQueryCacheSize Word
     , ringBufferSize :: RingBufferSize
+    , badFlakeMaxAge :: Tagged BadFlakeMaxAge Second
     }
   deriving Show
 
@@ -77,7 +79,7 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
       certKeyO <*> acidOption <*> cacheSecondsO <*>
       baseUrlO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
       allowResubmitBadFlakeInO <*> logLevelO <*>
-      indexQueryCacheSizeO <*> ringBufferSizeO)
+      indexQueryCacheSizeO <*> ringBufferSizeO <*> badFlakeMaxAgeO)
     fetcherP = FetcherJob <$> (FetcherCmdArgs <$> urlOption <*> rawNixCacheO <*>
       customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
       rawNixCacheMaxAgeO @RawNixCacheMaxAge (7 * 24 * 3600) <*>
@@ -125,6 +127,15 @@ rawNixCacheMaxAgeO defVal =
     <> showDefault
     <> value defVal
     <> help "max age of cached entity"
+  )
+
+badFlakeMaxAgeO :: Parser (Tagged BadFlakeMaxAge Second)
+badFlakeMaxAgeO = Tagged <$>
+  option auto
+  ( long (symbolVal $ Proxy @BadFlakeMaxAge)
+    <> showDefault
+    <> value (8 * 3600)
+    <> help "bad flake max age"
   )
 
 noSubmitionHeartbeatO :: Parser (Tagged NoSubmitionHeartbeatSec Second)
