@@ -12,15 +12,6 @@
     initial-value: #7ebae4;
 }
 
-@keyframes bounce {
-    from {
-        transform: translateX(-50vw);
-    }
-    to {
-        transform: translateX(50vw);
-    }
-}
-
 .ani-run .ani {
     position: fixed;
     z-index: 111;
@@ -31,6 +22,7 @@
     animation-iteration-count: infinite;
     animation-timing-function: cubic-bezier(0, 0.38, 1, 1);
 }
+
 .ani {
     display: none;
     width: 7vh;
@@ -45,7 +37,7 @@
     }
     to {
         transform: translateY(100vh) translateX(10vw) rotate(360deg);
-        opacity: 0;
+        opacity: 0.2;
     }
 }
 @keyframes fall2 {
@@ -55,7 +47,7 @@
     }
     to {
         transform: translateY(100vh) translateX(30vw) rotate(360deg);
-        opacity: 0;
+        opacity: 0.3;
     }
 }
 @keyframes fall3 {
@@ -65,7 +57,7 @@
     }
     to {
         transform: translateY(100vh) translateX(70vw) rotate(-360deg);
-        opacity: 0;
+        opacity: 0.2;
     }
 }
 @keyframes fall4 {
@@ -75,7 +67,7 @@
     }
     to {
         transform: translateY(100vh) translateX(70vw) rotate(-360deg);
-        opacity: 0;
+        opacity: 0.4;
     }
 }
 
