@@ -159,7 +159,6 @@ common base
 
 library
   import: base
-  ghc-options: -fplugin GHC.TypeLits.Normalise
   hs-source-dirs: src
   exposed-modules:
     PieceOfFlake.Acid
@@ -198,7 +197,6 @@ library
     , filepath                < 2
     , full-text-search        < 1
     , generics-sop            < 1
-    , ghc-typelits-natnormalise < 1
     , hnix                    < 1
     , hostname                < 2
     , http-types              < 1
@@ -210,7 +208,7 @@ library
     , mtl                     < 3
     , network                 < 4
     , non-empty               < 1
-    , non-negative-time-diff  < 1
+    , non-negative-time-diff  > 0.0.1 && < 1
     , prettyprinter           < 2
     , process                 < 2
     , psqueues                < 1

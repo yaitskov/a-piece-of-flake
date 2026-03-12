@@ -152,11 +152,11 @@
     "non-negative-time-diff": {
       "flake": false,
       "locked": {
-        "lastModified": 1773064079,
-        "narHash": "sha256-TRqjwOCf5Ka/9s2Idi6JvoONZ2at9oaqmb1lcbxq/7c=",
+        "lastModified": 1773315276,
+        "narHash": "sha256-iIvxTo2DyczTKOTWtLRTzzms4udlbnSr+Jk37U4fH4o=",
         "owner": "yaitskov",
         "repo": "non-negative-time-diff",
-        "rev": "4b67a14726612846e53178f74441379d2babe0f2",
+        "rev": "4968d7178e234467c49ac8c401b4632776808df4",
         "type": "github"
       },
       "original": {

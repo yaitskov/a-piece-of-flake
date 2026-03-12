@@ -52,7 +52,16 @@
               (final.callCabal2nix "hnix-store-remote" "${inputs.hnix-store}/hnix-store-remote" { });
           hnix = dontCheck (final.callCabal2nix "hnix" inputs.hnix { });
           ring-buffer = (final.callCabal2nix "ring-buffer" inputs.ring-buffer { });
-          non-negative-time-diff = (final.callCabal2nix "non-negative-time-diff" inputs.non-negative-time-diff { });
+          non-negative-time-diff =
+            (drv:
+              if cas.static
+              then
+                drv.overrideAttrs(oa: {
+                  configureFlags = (oa.configureFlags or []) ++ [ "--ghc-option=-optP=-DSTATIC" ];
+                })
+              else
+                drv)
+              (final.callCabal2nix "non-negative-time-diff" inputs.non-negative-time-diff { });
         };
         mkStatic = pkName:
           let
