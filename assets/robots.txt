@@ -2,4 +2,4 @@ User-agent: *
 Allow: /index.html$
 Allow: /$
 Disallow: /
-Sitemap: https://lficom.me/sitemap.xml
+Sitemap: https://pieceofflakenixrepository.org/sitemap.xml
