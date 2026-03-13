@@ -23,12 +23,46 @@ import PieceOfFlake.Flake.Repo
       validateRawFlakeUrl )
 import PieceOfFlake.Index ( findFlakes, listQueryCache, FlakeIndex (searchRequestCounter, indexerQueueLen) )
 import PieceOfFlake.Prelude hiding (Map, error, pi, Handler)
-import PieceOfFlake.Stats
+import PieceOfFlake.Stats ( greadTraVar, renderRepoStats )
 import PieceOfFlake.Th ( includeFile )
 import PieceOfFlake.Yesod
+    ( ContentEncoding(Br, Gzip),
+      Mime(Mime),
+      Ts(Ts),
+      staticFile,
+      sendStaticBs,
+      mp3Mime,
+      bulmaLayout,
+      clientAdrToDec4,
+      getClientAdr )
 import StmContainers.Map ( lookup )
 import Text.Blaze.Internal ( MarkupM )
 import Yesod.Core
+    ( Yesod(defaultLayout, shouldLogIO, maximumContentLength,
+            makeSessionBackend, approot),
+      RenderRoute(renderRoute),
+      TypedContent,
+      HandlerFor,
+      Html,
+      Approot(ApprootMaster),
+      WidgetFor,
+      ToWidgetHead(toWidgetHead),
+      ToWidgetBody(toWidgetBody),
+      mkYesod,
+      parseRoutes,
+      typeSvg,
+      typeJavascript,
+      typeCss,
+      typeXml,
+      typePlain,
+      getYesod,
+      setTitle,
+      whamlet,
+      hamlet,
+      requireCheckJsonBody,
+      invalidArgs,
+      permissionDenied )
+
 
 
 data Ypp
@@ -62,6 +96,7 @@ mkYesod "Ypp" [parseRoutes|
 |]
 
 instance Yesod Ypp where
+  approot = ApprootMaster $ untag . baseUrl
   makeSessionBackend _ = pure Nothing
   maximumContentLength _ = pure . \case
     Nothing -> 1
