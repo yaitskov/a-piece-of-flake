@@ -177,11 +177,11 @@ indexQueryCacheSizeO = Tagged <$>
     <> value 100
     <> help "index query cache size"
   )
+
 cacheSecondsO :: Parser (Tagged StaticCacheSeconds Word32)
 cacheSecondsO = Tagged <$>
   option auto
   ( long "static-cache"
-    <> short 'c'
     <> showDefault
     <> value 1
     <> help "cache duration for static content (used in HTTP header)"
