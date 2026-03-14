@@ -73,6 +73,7 @@ data SubmitListOfFlakesArgs
   = SubmitListOfFlakesArgs
   { webServiceUrl :: DynamicUrl
   , logLevel :: LogLevel
+  , indexTimeoutIn :: Tagged ResubmitPeriod NominalDiffTime
   }
   deriving (Show)
 
@@ -98,7 +99,7 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
       rawNixCacheMaxAgeO @RawNixCacheErrorMaxAge 800 <*>
       logLevelO <*> looseFlakesO)
     submitListP = SubmitListOfFlakes <$>
-      (SubmitListOfFlakesArgs <$> urlOption <*> logLevelO)
+      (SubmitListOfFlakesArgs <$> urlOption <*> logLevelO <*> allowResubmitBadFlakeInO)
     cmdp =
       hsubparser
         (  command "web" (infoP serviceP "launch web service")

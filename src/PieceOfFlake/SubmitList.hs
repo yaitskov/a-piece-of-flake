@@ -2,14 +2,25 @@ module PieceOfFlake.SubmitList where
 
 
 import PieceOfFlake.CmdArgs
-    ( SubmitListOfFlakesArgs(webServiceUrl) )
+    ( SubmitListOfFlakesArgs(indexTimeoutIn, webServiceUrl) )
 import PieceOfFlake.Prelude as P
 import PieceOfFlake.Flake
-
+    ( FlakeUrl(unFlakeUrl), Flake(flakeUrl), RawFlakeUrl(RawFlakeUrl) )
 import PieceOfFlake.Req
+    ( POST(POST),
+      ReqBodyJson(ReqBodyJson),
+      defaultHttpConfig,
+      jsonResponse,
+      responseBody,
+      runReq,
+      dynReq,
+      (/:),
+      bsResponse,
+      GET(GET),
+      NoReqBody(NoReqBody),
+      dynReq' )
 import System.IO (hPutChar, hPutStrLn)
-import UnliftIO.Exception
-
+import UnliftIO.Exception ( catchIO )
 data IndexTimeout = IndexTimeout deriving (Show, Eq)
 instance Exception IndexTimeout
 
@@ -26,9 +37,9 @@ runSubmitList sla = liftIO go
         _o -> do
           _ <- hPutChar stderr '.'
           P.hFlush stderr
-          threadDelay (2 :: Second)
+          threadDelay (1 :: Second)
           now <- getTimeAfter startedAt
-          if now `diffUTCTime` startedAt > 30 then
+          if now `diffUTCTime` startedAt > untag sla.indexTimeoutIn then
             pr $ "TIMEOUT " <> unFlakeUrl fu
           else
             waitUntilIndexed startedAt fu
