@@ -162,6 +162,7 @@ library
   hs-source-dirs: src
   exposed-modules:
     PieceOfFlake.Acid
+    PieceOfFlake.Aeson
     PieceOfFlake.CmdArgs
     PieceOfFlake.CmdRun
     PieceOfFlake.Fetcher
@@ -237,6 +238,24 @@ library
     , warp-tls                < 4
     , wl-pprint-text          < 2
 
+test-suite test
+  import: base
+  type: exitcode-stdio-1.0
+  main-is: Driver.hs
+  other-modules:
+    PieceOfFlake.Test.Aeson
+    Discovery
+  hs-source-dirs:
+    test
+  ghc-options: -Wall -rtsopts -threaded -main-is Driver
+  build-depends:
+    , a-piece-of-flake
+    , aeson
+    , QuickCheck
+    , tasty
+    , tasty-discover
+    , tasty-hunit
+    , tasty-quickcheck
 
 executable a-piece-of-flake
   import: base

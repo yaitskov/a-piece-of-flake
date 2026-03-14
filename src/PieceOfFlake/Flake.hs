@@ -52,7 +52,7 @@ deriveSafeCopy 1 'base ''PackageName
 data PackageInfo
   = PackageInfo
   { description :: Maybe Text
-  , license :: Maybe Text
+  , license :: [ Text ]
   , name :: PackageName
   , unfree :: Bool
   , platforms :: [ Text ]

@@ -2,16 +2,17 @@ module PieceOfFlake.Fetcher where
 import Crypto.Hash.SHA1 (hashlazy)
 import Data.Aeson
     ( FromJSON(parseJSON),
-      defaultOptions,
-      Options(fieldLabelModifier),
       eitherDecodeStrict,
-      genericParseJSON )
+      genericParseJSON,
+      defaultOptions,
+      Options(fieldLabelModifier) )
 import Data.Char ( toLower )
 import Data.ByteArray.Encoding (Base(Base16), convertToBase)
 import Data.ByteString.Char8 qualified as BS8
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as M
 import Data.Text qualified as T
+import PieceOfFlake.Aeson ( Some, someToList )
 import PieceOfFlake.CmdArgs
     ( FetcherCmdArgs(fetcherId, rawNixCacheErrMaxAge,
                      rawNixCacheMaxAge, rawNixCache, looseFlakes),
@@ -215,18 +216,19 @@ data RawLicense
   , free :: Bool
   , fullName :: Text
   , shortName :: Text
-  , spdxId :: Text
+  , spdxId :: Maybe Text
   , url :: Text
   } deriving (Show, Eq, Generic)
 
-instance FromJSON RawLicense
+instance FromJSON RawLicense where
+
 
 data RawPackage
   = RawPackage
   { broken :: Bool
   , description :: Maybe Text
   , insecure :: Bool
-  , license :: Maybe RawLicense
+  , license :: Maybe (Some RawLicense)
   , name :: Text
   , platforms :: Maybe [Text]
   , unfree :: Bool
@@ -243,7 +245,7 @@ rawPackageToPackageInfo :: RawPackage -> PackageInfo
 rawPackageToPackageInfo rp =
   PackageInfo
   { description = rp.description
-  , license = shortName <$> rp.license
+  , license = shortName <$> join (maybeToList (fmap someToList rp.license))
   , name = PackageName rp.name
   , platforms = fromMaybe [] rp.platforms
   , unfree = rp.unfree
