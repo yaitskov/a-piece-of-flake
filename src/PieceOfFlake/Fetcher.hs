@@ -1,5 +1,6 @@
 module PieceOfFlake.Fetcher where
 import Crypto.Hash.SHA1 (hashlazy)
+import Data.Aeson qualified as A
 import Data.Aeson
     ( FromJSON(parseJSON),
       eitherDecodeStrict,
@@ -222,6 +223,11 @@ data RawLicense
 
 instance FromJSON RawLicense where
 
+newtype RawPlatform = RawPlatform { unRawPlatform :: Text } deriving (Show, Eq)
+
+instance FromJSON RawPlatform where
+  parseJSON (A.String x) = pure $ RawPlatform x
+  parseJSON _ = pure $ RawPlatform "trash"
 
 data RawPackage
   = RawPackage
@@ -230,7 +236,7 @@ data RawPackage
   , insecure :: Maybe Bool
   , license :: Maybe (Some RawLicense)
   , name :: Maybe Text
-  , platforms :: Maybe [Text]
+  , platforms :: Maybe [RawPlatform]
   , unfree :: Maybe Bool
   , unsupported :: Maybe Bool
   } deriving (Show, Eq, Generic)
@@ -247,7 +253,7 @@ rawPackageToPackageInfo pn rp =
   { description = rp.description
   , license = shortName <$> join (maybeToList (fmap someToList rp.license))
   , name = maybe pn PackageName rp.name
-  , platforms = fromMaybe [] rp.platforms
+  , platforms = unRawPlatform <$> fromMaybe [] rp.platforms
   , unfree = rp.unfree
   , broken = rp.broken
   }
