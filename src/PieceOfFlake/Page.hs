@@ -360,6 +360,18 @@ getFlakeR fu = do
             ^{fw}
             |]
   where
+    flakeStatusLifeCycle =
+      [hamlet|
+             <p>Request status life-cycle:
+             <ul>
+               <li>Submitted
+               <li>On Fetcher
+               <li>Fetched
+               <li>Indexed - flake is discoverable by search request
+             <p>
+               <a href=@{StatsR}>
+                 Average processing time
+             |]
     flakeNotIndexed =
       [hamlet|<div id=flake-is-not-indexed>
              |]
@@ -389,14 +401,7 @@ getFlakeR fu = do
                       <summary class="notification is-info p-1">
                         Submitted
                       <p>The request for flake publication is accepted.
-                      <p>Request status life-cycle:
-                      <ul>
-                        <li>Submitted
-                        <li>On Fetcher
-                        <li>Fetched
-                        <li>Indexed - flake is discoverable by search request
-                      <p>
-                        <a href=@{StatsR}>Average processing time
+                      ^{flakeStatusLifeCycle}
                 <tr>
                   <td>
                     Timestamp
@@ -425,8 +430,10 @@ getFlakeR fu = do
                     <details>
                       <summary class="notification is-info p-1">
                         On Fetcher
-                      <p>Fetcher (Worker) picked up the request
-                         for downloadand evaluation of the flake.
+                      <p>
+                        Fetcher (Worker) picked up the request
+                        for downloadand evaluation of the flake.
+                      ^{flakeStatusLifeCycle}
                 <tr>
                   <td>
                     Timestamp
