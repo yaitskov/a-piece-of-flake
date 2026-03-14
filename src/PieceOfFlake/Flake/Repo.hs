@@ -11,7 +11,7 @@ import PieceOfFlake.Flake
       FetcherId,
       Flake(indexedAt, FlakeIndexed, SubmittedFlake, submittedAt,
             FlakeIsBeingFetched, FlakeFetched, flakeUrl, BadFlake,
-            fetcherRespondedAt) )
+            fetcherRespondedAt, submitionFetchedAt) )
 import PieceOfFlake.CmdArgs
     ( WsCmdArgs(allowResubmitIndexedFlakeIn, badFlakeMaxAge,
                 allowResubmitBadFlakeIn),
@@ -25,9 +25,11 @@ import PieceOfFlake.Stats
                  fetchingFlakes, fetchedFlakes, meanFetchTime, submittedFlakes, meanTimeInFetchQueue),
       addTimeDif )
 import PieceOfFlake.Stm ( newTQueueIO, readTQueue, writeTQueue, TQueue, atomicalog )
-import StmContainers.Map -- ( insert, lookup, newIO, Map )
+import StmContainers.Map
+    ( Map, delete, insert, listTNonAtomic, lookup, newIO )
 import Text.Regex.TDFA ( (=~) )
 
+newtype FetcherState = FetcherState { workingOn :: Maybe FlakeUrl }
 
 data FlakeRepo
   = FlakeRepo
@@ -37,7 +39,7 @@ data FlakeRepo
   , wsArgs :: WsCmdArgs
   , acidFlakes :: AcidState AcidFlakes
   , repoStats :: RepoStatsF TVar
-  , fetcherIps :: Map FetcherId IpAdr
+  , fetchers :: Map FetcherId FetcherState
   , fetcherQueue :: TQueue (Maybe FlakeUrl)
   , fetcherQueueLen :: TVar Int
   , acidQueue :: TQueue (FlakeUrl, Flake)
@@ -114,23 +116,33 @@ popFlakeSubmitionStm  ::
   FetcherId ->
   FlakeRepo ->
   WriterLoggingT STM (Maybe (FlakeUrl, Tagged TimeInFetchQueue NominalDiffTime))
-popFlakeSubmitionStm ftid fr = do
-  fSub <- lift $ readTQueue fr.fetcherQueue
-  lift $ modifyTVar' fr.fetcherQueueLen (\x -> x - 1)
-  fql <- lift $ readTVar fr.fetcherQueueLen
-  $(logInfo) $ "Fetcher queue decreased to " <> P.show fql
-  case fSub of
-    Nothing -> pure Nothing
-    Just fu ->
+popFlakeSubmitionStm ftid fr =
+  lift (lookup ftid fr.fetchers) >>= \case
+    Nothing -> do
+      $(logDebug) $ "Fetcher " <> P.show ftid <> " asks for flake url from scratch"
+      fromScratch
+    Just (FetcherState Nothing) -> do
+      $(logDebug) $ "Fetcher " <> P.show ftid <> " asks for flake url from scratch2"
+      fromScratch
+    Just (FetcherState (Just lostFu)) -> do
+      $(logWarn) $ "Fetcher " <> P.show ftid <> " asked for a next flake url, but "
+        <> "has not responded about " <> P.show lostFu
+      fetcherResume lostFu
+  where
+    fromScratch = do
+      fSub <- lift $ readTQueue fr.fetcherQueue
+      lift $ modifyTVar' fr.fetcherQueueLen (\x -> x - 1)
+      fql <- lift $ readTVar fr.fetcherQueueLen
+      $(logInfo) $ "Fetcher queue decreased to " <> P.show fql
+      case fSub of
+        Nothing -> pure Nothing
+        Just fu -> resumeWithFu fu
+    fetcherResume fu = do
       lift (lookup fu fr.flakes) >>= \case
-        Just (SubmittedFlake { flakeUrl, submittedAt })
+        Just (FlakeIsBeingFetched { flakeUrl, submitionFetchedAt })
           | flakeUrl == fu -> do
-            lift $ do
-              modifyTVar' fr.repoStats.submittedFlakes (flip (-) 1)
-              modifyTVar' fr.repoStats.fetchingFlakes (1 +)
-              doAfter submittedAt (\sa -> do
+              doAfter submitionFetchedAt (\sa -> do
                 now <- getTimeAfter sa
-                insert (FlakeIsBeingFetched flakeUrl (mkUtcBox now) ftid) fu fr.flakes
                 pure $ Just (flakeUrl, Tagged $ now `diffUTCTime` sa))
           | otherwise -> do
             $(logError) $ "Error flake url mismatch " <> P.show fu <> " <> " <> P.show flakeUrl
@@ -141,6 +153,78 @@ popFlakeSubmitionStm ftid fr = do
         Nothing -> do
           $(logError) $ "Error flake " <> P.show fu <> " is missing in map"
           popFlakeSubmitionStm ftid fr
+
+    resumeWithFu fu = do
+      lift (lookup fu fr.flakes) >>= \case
+        Just (SubmittedFlake { flakeUrl, submittedAt })
+          | flakeUrl == fu -> do
+              lift $ do
+                modifyTVar' fr.repoStats.submittedFlakes (flip (-) 1)
+                modifyTVar' fr.repoStats.fetchingFlakes (1 +)
+
+              doAfter submittedAt (\sa -> do
+                now <- getTimeAfter sa
+                assocFlakeWithFetcher now flakeUrl ftid fr.fetchers fr.flakes
+                lift $ insert (FlakeIsBeingFetched flakeUrl (mkUtcBox now) ftid) fu fr.flakes
+                pure $ Just (flakeUrl, Tagged $ now `diffUTCTime` sa))
+          | otherwise -> do
+            $(logError) $ "Error flake url mismatch " <> P.show fu <> " <> " <> P.show flakeUrl
+            popFlakeSubmitionStm ftid fr
+        Just ufs -> do
+          $(logError) $ "Expected SumbittedFlake state but:" <> P.show ufs
+          popFlakeSubmitionStm ftid fr
+        Nothing -> do
+          $(logError) $ "Error flake " <> P.show fu <> " is missing in map"
+          popFlakeSubmitionStm ftid fr
+
+deassocFlakeFromFetcher ::
+  (MonadTrans t, Hashable key, MonadLogger (t STM), Show key) =>
+  FlakeUrl -> key -> Map key FetcherState -> t STM ()
+deassocFlakeFromFetcher fu ftid fetchers = do
+  lift (lookup ftid fetchers) >>= \case
+    Nothing -> do
+      $(logWarn) $ "Fetcher " <> P.show ftid <> " has no state"
+      lift $ insert (FetcherState Nothing) ftid fetchers
+    Just (FetcherState Nothing) ->
+      $(logWarn) $ "Fetcher " <> P.show ftid <> " was not associated with any flake"
+    Just (FetcherState (Just afu))
+      | afu == fu -> do
+         lift $ insert (FetcherState Nothing) ftid fetchers
+         $(logDebug) $ "Fetcher " <> P.show ftid <> " is diassociated from flake " <> P.show afu
+      | otherwise -> do
+         $(logWarn) $ "Fetcher " <> P.show ftid <> " was diassociated with flake " <> P.show afu
+           <> " but returned " <> P.show fu
+         lift $ insert (FetcherState Nothing) ftid fetchers
+
+assocFlakeWithFetcher :: (MonadTrans t, Hashable a, MonadLogger (t STM), Show a) =>
+  UTCTime n -> FlakeUrl -> a -> Map a FetcherState -> Map FlakeUrl Flake -> t STM ()
+assocFlakeWithFetcher now fu ftid fetchers flakes = do
+  lift (lookup ftid fetchers) >>= \case
+    Nothing -> do
+      $(logDebug) $ "Fetcher " <> P.show ftid <> " got flake " <> P.show fu
+      lift $ insert (FetcherState $ Just fu) ftid fetchers
+    Just (FetcherState Nothing) -> do
+      $(logDebug) $ "Fetcher " <> P.show ftid <> " got flake' " <> P.show fu
+      lift $ insert (FetcherState $ Just fu) ftid fetchers
+    Just (FetcherState (Just lostFu))
+      | lostFu == fu ->
+          $(logDebug) $ "Fetcher " <> P.show ftid <> " resumes on " <> P.show fu
+      | otherwise -> do
+          lift $ insert (FetcherState $ Just fu) ftid fetchers
+          lift (lookup lostFu flakes) >>= \case
+            Nothing ->
+              $(logWarn) $ "Fetcher " <> P.show ftid <>
+                " lost a flake that is missing in the flake map " <> P.show lostFu
+            Just fbf@FlakeIsBeingFetched {}
+              | lostFu == fbf.flakeUrl -> do
+                  $(logWarn) $ "Flake " <> P.show lostFu <> " has been lost on fetcher " <> P.show ftid
+                  lift $ insert (BadFlake lostFu (mkUtcBox now) "Flake has been lost on fetcher. Try resubmit.")
+                           lostFu flakes
+              | otherwise -> do
+                  $(logError) $ "Lost flake url " <> P.show lostFu <> " mismatch with url in map " <> P.show fbf
+            Just ue ->
+              $(logWarn) $ "Flake " <> P.show fu <> " is bound to fetcher " <>
+                P.show ftid <> " with strange state " <> P.show ue
 
 data FetcherReq
   = FetcherReq
@@ -171,6 +255,7 @@ addFetchedFlake fr ftid (fu, fetchedFlake) = do
           | fu == exFu ->
             doAfter past $ \p -> do
               now <- lift $ getTimeAfter p
+              deassocFlakeFromFetcher fu ftid fr.fetchers
               case fetchedFlake of
                 Left e -> do
                   lift $ do
