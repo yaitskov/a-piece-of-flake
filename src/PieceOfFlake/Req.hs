@@ -63,7 +63,16 @@ dynReq :: forall m method body response.
   , HttpResponse response
   , HttpBodyAllowed (AllowsBody method) (ProvidesBody body)) =>
   method -> DynamicUrl -> Text -> body -> Proxy response -> m response
-dynReq m dUrl path body pro =
+dynReq m dUrl path = dynReq' m dUrl (/: path)
+
+dynReq' :: forall m method body response.
+  ( MonadHttp m
+  , HttpMethod method
+  , HttpBody body
+  , HttpResponse response
+  , HttpBodyAllowed (AllowsBody method) (ProvidesBody body)) =>
+  method -> DynamicUrl -> (forall u. Url u -> Url u) -> body -> Proxy response -> m response
+dynReq' m dUrl pathF body pro =
   case dUrl of
-    UrlHttp ur o -> req m (ur /: path) body pro o
-    UrlHttps ur o -> req m (ur /: path) body pro o
+    UrlHttp ur o -> req m (pathF ur) body pro o
+    UrlHttps ur o -> req m (pathF ur) body pro o

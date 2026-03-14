@@ -16,6 +16,7 @@ import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req ( setResponseTimeout )
 import PieceOfFlake.Stats ( mkRepoStats )
+import PieceOfFlake.SubmitList ( runSubmitList )
 import StmContainers.Map ( newIO )
 import UnliftIO.Concurrent ( forkFinally )
 import UnliftIO.Retry ( fibonacciBackoff, recoverAll )
@@ -76,7 +77,8 @@ runCmd = \case
       withLogs fa.logLevel $ do
         $(logInfo) $ "Start Fetcher "  <> show fa
         runFetcher serUrl' fa =<< loadFetcherSecret fa.fetcherSecretPath
-
+  SubmitListOfFlakes sla ->
+    withLogs sla.logLevel $ runSubmitList sla
   PieceOfFlakeVersion ->
     putStrLn $ "Version " <> showVersion version
 

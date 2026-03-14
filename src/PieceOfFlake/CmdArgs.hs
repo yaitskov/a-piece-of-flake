@@ -69,9 +69,17 @@ data FetcherCmdArgs
     }
   deriving (Show)
 
+data SubmitListOfFlakesArgs
+  = SubmitListOfFlakesArgs
+  { webServiceUrl :: DynamicUrl
+  , logLevel :: LogLevel
+  }
+  deriving (Show)
+
 data CmdArgs
   = WebService WsCmdArgs
   | FetcherJob FetcherCmdArgs
+  | SubmitListOfFlakes SubmitListOfFlakesArgs
   | PieceOfFlakeVersion
   deriving (Show)
 
@@ -89,10 +97,13 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
       rawNixCacheMaxAgeO @RawNixCacheMaxAge (7 * 24 * 3600) <*>
       rawNixCacheMaxAgeO @RawNixCacheErrorMaxAge 800 <*>
       logLevelO <*> looseFlakesO)
+    submitListP = SubmitListOfFlakes <$>
+      (SubmitListOfFlakesArgs <$> urlOption <*> logLevelO)
     cmdp =
       hsubparser
         (  command "web" (infoP serviceP "launch web service")
         <> command "fetcher" (infoP fetcherP "launch fetcher job")
+        <> command "submit-list" (infoP submitListP "submit list of flakes read for stdin - an url per line")
         <> command "version" (infoP (pure PieceOfFlakeVersion) "print program version"))
 
     infoP p h = info p (progDesc h <> fullDesc)

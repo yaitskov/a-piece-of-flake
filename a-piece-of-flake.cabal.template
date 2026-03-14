@@ -96,6 +96,7 @@ library
     PieceOfFlake.Req
     PieceOfFlake.Stats
     PieceOfFlake.Stm
+    PieceOfFlake.SubmitList
     PieceOfFlake.Th
     PieceOfFlake.TotalMath
     PieceOfFlake.Yesod

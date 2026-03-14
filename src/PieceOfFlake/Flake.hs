@@ -14,9 +14,9 @@ import Yesod.Core
       TypedContent(TypedContent), PathPiece )
 
 newtype RawFlakeUrl = RawFlakeUrl Text
-  deriving newtype (Show, FromJSON)
+  deriving newtype (Show, FromJSON, ToJSON)
 
-newtype FlakeUrl = FlakeUrl Text
+newtype FlakeUrl = FlakeUrl { unFlakeUrl :: Text }
   deriving newtype (Show, Read, Eq, Ord, ToMarkup, ToJSON, FromJSON,
                     Hashable, ToContent, ToTypedContent, IsString, ToText, PathPiece)
 

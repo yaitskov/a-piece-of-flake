@@ -83,6 +83,7 @@ mkYesod "Ypp" [parseRoutes|
 /stats StatsR GET
 /about AboutR GET
 /flake/#FlakeUrl FlakeR GET
+/flake/status/#FlakeUrl FlakeStatusR GET
 /publication PublicationR GET
 /favicon.svg FaviconR GET
 /flake.svg FlakeSvgR GET
@@ -341,6 +342,20 @@ metaTags =
            <link rel=stylesheet href=/style.css>
            <script src="/app.js"></script>
            |]
+
+getFlakeStatusR :: FlakeUrl -> Handler Text
+getFlakeStatusR fu = do
+  Ypp { repo } <- getYesod
+  atomically (lookup fu repo.flakes) >>= \case
+    Nothing -> do
+      $(logDebug) $ "Not found " <> show fu
+      pure "NotFound"
+    Just f -> pure $ case f of
+      SubmittedFlake {} -> "Submitted"
+      FlakeIsBeingFetched {} -> "OnFetcher"
+      BadFlake {} -> "Bad"
+      FlakeFetched {} -> "Fetched"
+      FlakeIndexed {} -> "Indexed"
 
 getFlakeR :: FlakeUrl -> Handler Html
 getFlakeR fu = do
