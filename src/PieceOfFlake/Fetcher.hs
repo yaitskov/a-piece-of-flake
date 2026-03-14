@@ -217,7 +217,7 @@ data RawLicense
   , fullName :: Text
   , shortName :: Text
   , spdxId :: Maybe Text
-  , url :: Text
+  , url :: Maybe Text
   } deriving (Show, Eq, Generic)
 
 instance FromJSON RawLicense where
