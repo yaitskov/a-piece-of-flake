@@ -225,14 +225,14 @@ instance FromJSON RawLicense where
 
 data RawPackage
   = RawPackage
-  { broken :: Bool
+  { broken :: Maybe Bool
   , description :: Maybe Text
-  , insecure :: Bool
+  , insecure :: Maybe Bool
   , license :: Maybe (Some RawLicense)
-  , name :: Text
+  , name :: Maybe Text
   , platforms :: Maybe [Text]
-  , unfree :: Bool
-  , unsupported :: Bool
+  , unfree :: Maybe Bool
+  , unsupported :: Maybe Bool
   } deriving (Show, Eq, Generic)
 
 instance FromJSON RawPackage
@@ -241,12 +241,12 @@ nixEvalPkgMeta :: FetcherM m => FlakeUrl -> Architecture -> PackageName -> m Raw
 nixEvalPkgMeta (FlakeUrl fu) (Architecture arch) (PackageName pn) =
   readJson "nix" ["eval", "--json", fu <> "#packages." <> arch <> "." <> pn <> ".meta" ]
 
-rawPackageToPackageInfo :: RawPackage -> PackageInfo
-rawPackageToPackageInfo rp =
+rawPackageToPackageInfo :: PackageName -> RawPackage -> PackageInfo
+rawPackageToPackageInfo pn rp =
   PackageInfo
   { description = rp.description
   , license = shortName <$> join (maybeToList (fmap someToList rp.license))
-  , name = PackageName rp.name
+  , name = maybe pn PackageName rp.name
   , platforms = fromMaybe [] rp.platforms
   , unfree = rp.unfree
   , broken = rp.broken
@@ -267,12 +267,10 @@ metaFlakeFromUrl fu = do
     , flakeDeps = []
     }
   where
-    getPackageInfo arch pkgName =
-       rawPackageToPackageInfo <$> nixEvalPkgMeta fu arch pkgName
+    getPackageInfo arch pkgName = nixEvalPkgMeta fu arch pkgName <&> rawPackageToPackageInfo pkgName
     mapArchPkgs (arch, pkgNames) =
           (arch, ) . M.fromList <$> mapM (\pkgName -> (pkgName,) <$> getPackageInfo arch pkgName)
             (filter (/= PackageName "default") pkgNames)
-
 
 uploadFlakeAndFetch :: (FetcherM m) =>
   Maybe (FlakeUrl, Either Text MetaFlake)

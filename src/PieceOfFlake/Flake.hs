@@ -54,9 +54,9 @@ data PackageInfo
   { description :: Maybe Text
   , license :: [ Text ]
   , name :: PackageName
-  , unfree :: Bool
+  , unfree :: Maybe Bool
   , platforms :: [ Text ]
-  , broken :: Bool
+  , broken :: Maybe Bool
   } deriving (Show, Eq, Generic)
 deriveSafeCopy 1 'base ''PackageInfo
 instance ToJSON PackageInfo

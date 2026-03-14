@@ -588,12 +588,14 @@ packageInfoToWidget (pi :: PackageInfo) =
           <tr>
             <td>License
             <td>#{l}
-        <tr>
-          <td>Unfree
-          <td>#{pi.unfree}
-        <tr>
-          <td>Broken
-          <td>#{pi.broken}
+        $forall uf <- pi.unfree
+          <tr>
+            <td>Unfree
+            <td>#{uf}
+        $forall b <- pi.broken
+          <tr>
+            <td>Broken
+            <td>#{b}
          |]
 
 navBar :: WidgetFor Ypp ()

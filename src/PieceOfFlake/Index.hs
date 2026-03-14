@@ -66,10 +66,9 @@ packageInfoToTerms :: PackageInfo -> [Term]
 packageInfoToTerms pi =
   concatMap tokenize pi.description <>
   concatMap tokenize pi.license  <>
-  [ toText pi.name
-  , if pi.unfree then "unfree" else "free"
-  , if pi.broken then "broken" else "unbroken"
-  ]
+  [ toText pi.name ]
+  <> maybeToList (fmap (\c -> if c then "unfree" else "free") pi.unfree)
+  <> maybeToList (fmap (\c -> if c then "broken" else "unbroken") pi.broken)
 
 extractTerms :: (FlakeUrl, MetaFlake) -> () -> [Term]
 extractTerms (fu, mf) () =
