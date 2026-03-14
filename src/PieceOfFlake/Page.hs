@@ -395,6 +395,15 @@ getFlakeR fu = do
              <div class="notification is-danger">
                Flake #{fu} is not found
              |]
+    flakeUrlRow flakeUrl =
+      [hamlet|
+             <tr>
+               <td>
+                 Link
+               <td>
+                 <a href="#{linkUrl flakeUrl}">
+                   #{flakeUrl}
+             |]
     flakeToWidget f =
       case f of
         SubmittedFlake { flakeUrl, submittedAt, submittedFrom } ->
@@ -402,12 +411,7 @@ getFlakeR fu = do
             ^{flakeNotIndexed}
             <table class=table>
               <tbody class=content>
-                <tr>
-                  <td>
-                    Link
-                  <td>
-                    <a href="#{linkUrl flakeUrl}">
-                      #{flakeUrl}
+                ^{flakeUrlRow flakeUrl}
                 <tr>
                   <td>
                     Status
@@ -433,11 +437,7 @@ getFlakeR fu = do
             ^{flakeNotIndexed}
             <table class=table>
               <tbody class=content>
-                <tr>
-                  <td>
-                    Url
-                  <td>
-                    #{flakeUrl}
+                ^{flakeUrlRow flakeUrl}
                 <tr>
                   <td>
                     Status
@@ -464,11 +464,7 @@ getFlakeR fu = do
           [hamlet|
             <table class=table>
               <tbody class=content>
-                <tr>
-                  <td>
-                    Url
-                  <td>
-                    #{flakeUrl}
+                ^{flakeUrlRow flakeUrl}
                 <tr>
                   <td>
                     Status
@@ -498,11 +494,7 @@ getFlakeR fu = do
                ^{flakeNotIndexed}
                <table class=table>
                  <tbody class=content>
-                   <tr>
-                     <td>
-                       Url
-                     <td>
-                       #{flakeUrl}
+                   ^{flakeUrlRow flakeUrl}
                    <tr>
                      <td>
                        Status
@@ -533,11 +525,7 @@ getFlakeR fu = do
              [hamlet|
                <table class=table>
                  <tbody class=content>
-                   <tr>
-                     <td>
-                       Url
-                     <td>
-                       #{flakeUrl}
+                   ^{flakeUrlRow flakeUrl}
                    <tr>
                      <td>
                        Status
