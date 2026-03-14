@@ -565,12 +565,14 @@ packageInfoToWidget (pi :: PackageInfo) =
       <summary>
         Package #{pi.name}
       <table class="table">
-        <tr>
-          <td>Description
-          <td>#{pi.description}
-        <tr>
-          <td>License
-          <td>#{pi.license}
+        $forall d <- pi.description
+          <tr>
+            <td>Description
+            <td>#{d}
+        $forall l <- pi.license
+          <tr>
+            <td>License
+            <td>#{l}
         <tr>
           <td>Unfree
           <td>#{pi.unfree}

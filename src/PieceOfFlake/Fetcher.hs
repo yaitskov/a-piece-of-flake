@@ -224,11 +224,11 @@ instance FromJSON RawLicense
 data RawPackage
   = RawPackage
   { broken :: Bool
-  , description :: Text
+  , description :: Maybe Text
   , insecure :: Bool
-  , license :: RawLicense
+  , license :: Maybe RawLicense
   , name :: Text
-  , platforms :: [Text]
+  , platforms :: Maybe [Text]
   , unfree :: Bool
   , unsupported :: Bool
   } deriving (Show, Eq, Generic)
@@ -243,9 +243,9 @@ rawPackageToPackageInfo :: RawPackage -> PackageInfo
 rawPackageToPackageInfo rp =
   PackageInfo
   { description = rp.description
-  , license = rp.license.shortName
+  , license = shortName <$> rp.license
   , name = PackageName rp.name
-  , platforms = rp.platforms
+  , platforms = fromMaybe [] rp.platforms
   , unfree = rp.unfree
   , broken = rp.broken
   }

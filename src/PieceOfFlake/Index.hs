@@ -64,9 +64,9 @@ mkFlakeIndex (Tagged cs) = do
 
 packageInfoToTerms :: PackageInfo -> [Term]
 packageInfoToTerms pi =
-  tokenize pi.description <>
-  [ "license", pi.license
-  , toText pi.name
+  concatMap tokenize pi.description <>
+  concatMap tokenize pi.license  <>
+  [ toText pi.name
   , if pi.unfree then "unfree" else "free"
   , if pi.broken then "broken" else "unbroken"
   ]

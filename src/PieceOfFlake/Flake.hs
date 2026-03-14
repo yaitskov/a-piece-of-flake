@@ -51,8 +51,8 @@ newtype PackageName = PackageName Text
 deriveSafeCopy 1 'base ''PackageName
 data PackageInfo
   = PackageInfo
-  { description :: Text
-  , license :: Text
+  { description :: Maybe Text
+  , license :: Maybe Text
   , name :: PackageName
   , unfree :: Bool
   , platforms :: [ Text ]
