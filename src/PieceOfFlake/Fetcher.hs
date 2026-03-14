@@ -14,7 +14,7 @@ import Data.Map.Strict qualified as M
 import Data.Text qualified as T
 import PieceOfFlake.CmdArgs
     ( FetcherCmdArgs(fetcherId, rawNixCacheErrMaxAge,
-                     rawNixCacheMaxAge, rawNixCache),
+                     rawNixCacheMaxAge, rawNixCache, looseFlakes),
       RawNixCacheErrorMaxAge,
       RawNixCacheMaxAge,
       FetcherSecret )
@@ -142,6 +142,7 @@ data FetcherConf
   , arch :: Architecture
   , fetcherSecret :: FetcherSecret
   , fetcherArgs :: FetcherCmdArgs
+  , flakeLoser :: Maybe (FlakeUrl, Either Text MetaFlake) -> Maybe (FlakeUrl, Either Text MetaFlake)
   }
 
 type FetcherM m = (MonadReader FetcherConf m, PoF m)
@@ -304,13 +305,13 @@ uploadFlakeAndFetch f = do
   $(logDebug) $ "Response from WS for " <> show (fmap fst f) <>  ": "   <> show (responseBody jr)
   case responseBody jr of
     Nothing -> uploadFlakeAndFetch Nothing
-    Just fu -> catchAny (go fu) (onEx fu)
+    Just fu -> catchAny (go fctx fu) (onEx fctx fu)
   where
-    onEx fu e = do
+    onEx fctx fu e = do
       $(logError) $ "nix failed for " <> show fu <> " with " <> show e
-      uploadFlakeAndFetch (Just (fu, Left $ show e))
-    go fu =
-      uploadFlakeAndFetch . Just . (fu,) . Right =<< metaFlakeFromUrl fu
+      uploadFlakeAndFetch $ fctx.flakeLoser (Just (fu, Left $ show e))
+    go fctx fu =
+      uploadFlakeAndFetch . fctx.flakeLoser . Just . (fu,) . Right =<< metaFlakeFromUrl fu
 
 runFetcher :: PoF m => DynamicUrl -> FetcherCmdArgs -> FetcherSecret -> m ()
 runFetcher serviceUrl fa fsec = do
@@ -321,4 +322,9 @@ runFetcher serviceUrl fa fsec = do
       (capDelay (toMs (6 :: Second)) (fibonacciBackoff (toMs (1 :: Second))))
       (\_ ->
          runReaderT (uploadFlakeAndFetch Nothing)
-           $ FetcherConf serviceUrl ca fsec fa)
+           $ FetcherConf serviceUrl ca fsec fa looseF)
+  where
+    looseF :: forall a. Maybe a -> Maybe a
+    looseF = if untag fa.looseFlakes
+      then const Nothing
+      else id

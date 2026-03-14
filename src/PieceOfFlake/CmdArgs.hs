@@ -54,6 +54,7 @@ data WsCmdArgs
 
 type RawNixCacheMaxAge = "nix-cache-max-age"
 type RawNixCacheErrorMaxAge = "nix-cache-err-max-age"
+type LooseFlakes = "loose-flake"
 data FetcherCmdArgs
   = FetcherCmdArgs
     { webServiceUrl :: DynamicUrl
@@ -64,6 +65,7 @@ data FetcherCmdArgs
     , rawNixCacheMaxAge :: Tagged RawNixCacheMaxAge NominalDiffTime
     , rawNixCacheErrMaxAge :: Tagged RawNixCacheErrorMaxAge NominalDiffTime
     , logLevel :: LogLevel
+    , looseFlakes :: Tagged LooseFlakes Bool
     }
   deriving (Show)
 
@@ -86,7 +88,7 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
       customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
       rawNixCacheMaxAgeO @RawNixCacheMaxAge (7 * 24 * 3600) <*>
       rawNixCacheMaxAgeO @RawNixCacheErrorMaxAge 800 <*>
-      logLevelO)
+      logLevelO <*> looseFlakesO)
     cmdp =
       hsubparser
         (  command "web" (infoP serviceP "launch web service")
@@ -117,6 +119,15 @@ allowResubmitIndexedFlakeInO = Tagged <$>
     <> showDefault
     <> value (toNominal (2 :: Hour))
     <> help "how soon an indexed flake can be resubmitted"
+  )
+
+looseFlakesO :: Parser (Tagged LooseFlakes Bool)
+looseFlakesO = Tagged <$>
+  option auto
+  ( long (symbolVal $ Proxy @LooseFlakes)
+    <> showDefault
+    <> value False
+    <> help "loose fetched flake - debugging web service response"
   )
 
 logLevelO :: Parser LogLevel
