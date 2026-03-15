@@ -15,11 +15,13 @@ import Data.Map.Strict qualified as M
 import Data.Text qualified as T
 import PieceOfFlake.Aeson ( Some, someToList )
 import PieceOfFlake.CmdArgs
-    ( FetcherCmdArgs(fetcherId, rawNixCacheErrMaxAge,
-                     rawNixCacheMaxAge, rawNixCache, looseFlakes),
-      RawNixCacheErrorMaxAge,
+    ( FetcherSecret,
+      FetcherCmdArgs(looseFlakes, rawNixCacheErrMaxAge,
+                     rawNixCacheMaxAge, rawNixCache, runNixGCIfUsedMoreThan, fetcherId),
       RawNixCacheMaxAge,
-      FetcherSecret )
+      RawNixCacheErrorMaxAge,
+      Percent,
+      parsePercent )
 import PieceOfFlake.Flake
     ( FlakeUrl(..),
       Architecture(..),
@@ -42,20 +44,19 @@ import PieceOfFlake.Req
       isStatusCodeException,
       responseStatusCode )
 import System.Exit ( ExitCode(ExitFailure, ExitSuccess) )
-import System.Process ( readProcess, readProcessWithExitCode )
+import System.Process ( callProcess, readProcess, readProcessWithExitCode )
+import Text.Regex.TDFA ( AllTextSubmatches(getAllTextSubmatches), (=~) )
 import UnliftIO.Retry
     ( capDelay,
       fibonacciBackoff,
       limitRetries,
       recoverAll,
       recovering )
-
 import UnliftIO.Directory
     ( doesFileExist,
       createDirectoryIfMissing,
       removeFile )
 import System.FilePath ( (</>) )
-
 
 showDigest :: ByteString -> String
 showDigest = BS8.unpack . convertToBase Base16
@@ -190,6 +191,37 @@ data RawFlakeInfo
   } deriving (Show, Eq, Generic)
 instance FromJSON RawFlakeInfo
 
+-- Filesystem      Size  Used Avail Use% Mounted on
+-- /dev/nvme0n1p5  907G  485G  376G  57% /
+dfOutputRegex :: String
+dfOutputRegex = " (1?[0-9]{1,2}[%])"
+
+parseDfLine :: String -> Maybe Percent
+parseDfLine l =
+  case getAllTextSubmatches (l =~ dfOutputRegex) of
+    ([_full, pG ] :: [String]) -> parsePercent pG
+    _ -> Nothing
+
+rootDiskUsedSpacePercent :: FetcherM m => m Percent
+rootDiskUsedSpacePercent = do
+  liftIO (readProcess "df" ["-h", "/"] "") <&> mapMaybe (parseDfLine . toString) . lines . toText >>= \case
+    [] -> throwIO . stringException $ "No result from df -h /"
+    [r] -> do
+      $(logDebug) $ "Root volume used space: " <> show r
+      pure r
+    mu -> throwIO . stringException $ "Multiple results " <> show mu
+
+runNixCG :: FetcherM m => m ()
+runNixCG = liftIO $ callProcess "nix-store" ["--gc"]
+
+checkDiskFreeSpace :: FetcherM m => m ()
+checkDiskFreeSpace = do
+  Tagged criticalDiskUsage <- runNixGCIfUsedMoreThan <$> asks fetcherArgs
+  diskUsage <- rootDiskUsedSpacePercent
+  if criticalDiskUsage <= diskUsage
+    then runNixCG
+    else $(logDebug) "Skip nix GC step"
+
 nixFlakeInfo :: FetcherM m => FlakeUrl -> m RawFlakeInfo
 nixFlakeInfo (FlakeUrl fu) =
   readJson "nix" ["flake", "metadata", "--json", fu]
@@ -260,6 +292,7 @@ rawPackageToPackageInfo pn rp =
 
 metaFlakeFromUrl :: FetcherM m => FlakeUrl -> m MetaFlake
 metaFlakeFromUrl fu = do
+  checkDiskFreeSpace
   rfi <- nixFlakeInfo fu
   curArch <- asks arch
   rfo <- nixFlakeShow fu

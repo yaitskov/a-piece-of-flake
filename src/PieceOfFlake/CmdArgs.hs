@@ -2,6 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 module PieceOfFlake.CmdArgs where
 
+import Data.Char (isDigit)
 import Data.Either.Combinators ( mapLeft )
 import GHC.TypeLits (KnownSymbol)
 import Network.HostName ( getHostName )
@@ -55,6 +56,7 @@ data WsCmdArgs
 type RawNixCacheMaxAge = "nix-cache-max-age"
 type RawNixCacheErrorMaxAge = "nix-cache-err-max-age"
 type LooseFlakes = "loose-flake"
+type NixGCDiskCriticalCapacity = "nix-gc-used"
 data FetcherCmdArgs
   = FetcherCmdArgs
     { webServiceUrl :: DynamicUrl
@@ -66,6 +68,7 @@ data FetcherCmdArgs
     , rawNixCacheErrMaxAge :: Tagged RawNixCacheErrorMaxAge NominalDiffTime
     , logLevel :: LogLevel
     , looseFlakes :: Tagged LooseFlakes Bool
+    , runNixGCIfUsedMoreThan :: Tagged NixGCDiskCriticalCapacity Percent
     }
   deriving (Show)
 
@@ -97,7 +100,7 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
       customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
       rawNixCacheMaxAgeO @RawNixCacheMaxAge (7 * 24 * 3600) <*>
       rawNixCacheMaxAgeO @RawNixCacheErrorMaxAge 800 <*>
-      logLevelO <*> looseFlakesO)
+      logLevelO <*> looseFlakesO <*> nixGcDiskUsedO)
     submitListP = SubmitListOfFlakes <$>
       (SubmitListOfFlakesArgs <$> urlOption <*> logLevelO <*> allowResubmitBadFlakeInO)
     cmdp =
@@ -114,6 +117,25 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
 
 defaultPort :: Int
 defaultPort = 3003
+
+newtype Percent = Percent Word8 deriving newtype (Eq, Ord)
+instance Show Percent where
+  show (Percent p) = P.show p <> "%"
+
+parsePercent :: String -> Maybe Percent
+parsePercent s =
+  case span isDigit s of
+    (digits@(_:_), "%") -> Percent <$> readMaybe digits
+    _bad -> Nothing
+
+nixGcDiskUsedO :: Parser (Tagged NixGCDiskCriticalCapacity Percent)
+nixGcDiskUsedO = Tagged <$>
+  option (maybeReader parsePercent)
+  ( long (symbolVal $ Proxy @NixGCDiskCriticalCapacity)
+    <> showDefault
+    <> value (Percent 90)
+    <> help "percent of root volume usage when nix GC is triggerred before fetching a flake"
+  )
 
 allowResubmitBadFlakeInO :: Parser (Tagged ResubmitPeriod NominalDiffTime)
 allowResubmitBadFlakeInO = Tagged <$>
