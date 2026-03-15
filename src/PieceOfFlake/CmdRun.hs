@@ -1,9 +1,18 @@
 module PieceOfFlake.CmdRun where
 
 import Data.Version (showVersion)
+import Data.ByteString.Char8 qualified as S8
 import Paths_a_piece_of_flake ( version )
 import PieceOfFlake.Acid ( loadFromDb, openFlakeDb, runPersistQueue )
 import PieceOfFlake.CmdArgs
+    ( FetcherSecret(..),
+      WsCmdArgs(baseUrl, indexQueryCacheSize, acidFlakes, ringBufferSize,
+                logLevel, fetcherSecretPath, noSubmitionHeartbeat, staticCache),
+      NoSubmitionHeartbeatSec,
+      CmdArgs(..),
+      FetcherCmdArgs(fetcherSecretPath, FetcherCmdArgs, webServiceUrl,
+                     noSubmitionHeartbeat, logLevel),
+      SubmitListOfFlakesArgs(logLevel) )
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
     ( FlakeRepo(flakeIndex, acidFlakes, acidQueue, repoStats, flakes),
@@ -83,8 +92,17 @@ runCmd = \case
     putStrLn $ "Version " <> showVersion version
 
 withLogs :: MonadIO m => LogLevel -> LoggingT m a -> m a
-withLogs minLogL a =
-  runStdoutLoggingT $ filterLogger (\_ l -> l >= minLogL) a
+withLogs minLogL m =
+  runFlushingStdoutLoggingT $ filterLogger (\_ l -> l >= minLogL) m
+  where
+    runFlushingStdoutLoggingT = (`runLoggingT` flushingOutput stdout)
+      where
+        -- without explicit flushing - syslog does to get logs
+        flushingOutput h loc src level msg = S8.hPutStr h ls >> hFlush h
+          where
+            ls = defaultLogStrBS loc src level msg
+            defaultLogStrBS a b c d = fromLogStr $ defaultLogStr a b c d
+
 
 loadFetcherSecret :: MonadIO m => Tagged FetcherSecret FilePath -> m FetcherSecret
 loadFetcherSecret a = readFileTxt (untag a) <&> FetcherSecret
