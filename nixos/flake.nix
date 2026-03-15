@@ -1,32 +1,32 @@
-lfi:
+pof:
 { config
 , lib
 , pkgs
 , ...
 }: let
-  cfg = config.programs.a-piece-of-flake;
+  cfg = config.services.a-piece-of-flake-fetcher;
    inherit (lib) mkOption types optionals;
   inherit (types) ints;
 in {
-  options.programs.a-piece-of-flake = {
-    enable = lib.mkEnableOption "a-piece-of-flake";
-    port = mkOption {
-      type = types.port;
-      default = 8800;
-      description = "HTTP port - service port";
+  options.services.a-piece-of-flake-fetcher = {
+    enable = lib.mkEnableOption "a-piece-of-flake-fetcher";
+    ws-url = mkOption {
+      type = types.str;
+      default = "https://pieceofflakenixrepository.org:443";
+      description = "base url to piece-of-flake web service";
     };
-    cert = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      description = "path to file with a certificate chain for HTTPS; HTTP is used if not set";
+    secret-path = mkOption {
+      type = types.path;
+      description = "path to file with a fetche secret to be used on ws for auth";
     };
-    cert-key = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      description = "path to file with a certificate private key for HTTPS; HTTP is used if not set";
+    nix-raw-cache = mkOption {
+      type = types.path;
+      default = "/var/piece-of-flake/nix-raw-cache";
+      description = "nix raw cache";
     };
   };
   config = lib.mkIf cfg.enable {
+    systemd.tmpfiles.rules = [ "d ${cfg.nix-raw-cache} 0770 a-piece-of-flake a-piece-of-flake -" ];
     users = {
       groups.a-piece-of-flake = {};
       users.a-piece-of-flake = {
@@ -34,11 +34,13 @@ in {
         isSystemUser = true;
       };
     };
-    environment.systemPackages = [ lfi ];
-    systemd.services.a-piece-of-flake = {
+    environment.systemPackages = [ pof ];
+    systemd.services.a-piece-of-flake-fetcher = {
       wantedBy = [ "network-online.target" ];
       requires = [ "network-online.target" ];
       enable = true;
+      path = [ pkgs.nix ];
+
       serviceConfig = {
         User = "a-piece-of-flake";
         Group = "a-piece-of-flake";
@@ -46,11 +48,11 @@ in {
         RestartSec = "8s";
         ExecStart =
           let
-            ops = ["-p" (toString cfg.port)
-                  ]
-                  ++ optionals (cfg.cert != null) [ "-g" cfg.cert ]
-                  ++ optionals (cfg.cert-key != null) [ "-d" cfg.cert-key ];
-          in "${lfi}/bin/a-piece-of-flake run ${lib.escapeShellArgs ops}";
+            ops = [ "-u" (toString cfg.ws-url)
+                    "-c" (toString cfg.nix-raw-cache)
+                    "-s" (toString cfg.secret-path)
+                  ];
+          in "${pof}/bin/a-piece-of-flake fetcher ${lib.escapeShellArgs ops}";
       };
     };
   };
