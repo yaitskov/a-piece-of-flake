@@ -21,7 +21,7 @@ in {
     };
     nix-raw-cache = mkOption {
       type = types.path;
-      default = "/var/piece-of-flake/nix-raw-cache";
+      default = "/var/lib/piece-of-flake/nix-raw-cache";
       description = "nix raw cache";
     };
   };
