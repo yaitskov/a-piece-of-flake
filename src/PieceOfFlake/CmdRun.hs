@@ -52,7 +52,9 @@ launchBackgroundThreads period fr = do
       (\_ -> runPersistQueue fr.acidFlakes fr.acidQueue)
   forkForever "Flake text search indexer"
     $ consumeIndexQueue fr.repoStats fr.flakes fr.flakeIndex
-  forkForever "Empty Submition" $ sendEmptyFlakeSubmition fr period
+  forkForever "Empty Submition" $ do
+    threadDelay $ untag period
+    sendEmptyFlakeSubmition fr
   forkForever "Old Bad Flake Collector" $ removeOldBadFlakes fr
   where
     forkForever thrName f = do

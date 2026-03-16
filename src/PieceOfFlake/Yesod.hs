@@ -35,7 +35,7 @@ import Yesod.Core
       HandlerFor,
       PageContent(pageBody, pageTitle, pageDescription, pageHead),
       TypedContent(TypedContent),
-      WidgetFor, lookupHeader, addHeader )
+      WidgetFor, lookupHeader, addHeader, typeJson )
 
 
 newtype HostIp = HostIp HostAddress deriving newtype (Eq, Ord)
@@ -193,3 +193,13 @@ staticFile mime plainContent preEncodedContent = do
   -- get supported encodings
   -- pick best
   -- set Content-Encoding header
+
+
+-- | Handler () - is encoded as an empty string even with header Accepted equals to "application/json"
+-- meanwhile Aeson.encode () = "[]" and therefore Aeson decode expect the same
+data Unit = Unit deriving (Show, Eq)
+
+instance ToContent Unit where
+  toContent _ = toContent ("[]" :: ByteString)
+instance ToTypedContent Unit where
+  toTypedContent  = TypedContent typeJson . toContent

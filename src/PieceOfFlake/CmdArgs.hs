@@ -12,6 +12,7 @@ import PieceOfFlake.Prelude
 import PieceOfFlake.Prelude qualified as P
 import PieceOfFlake.Req ( DynamicUrl(UrlHttp), http, port, parseUrl )
 import PieceOfFlake.WebService
+    ( FetcherHeartbeatPeriod, FetcherSecret, NoSubmitionHeartbeatSec )
 import Text.Show ( Show(show) )
 
 data HttpPort
@@ -196,7 +197,7 @@ fetcherHeartbeatPeriodO = Tagged <$>
   option auto
   ( long "fetcher-heartbeat"
     <> showDefault
-    <> value 60
+    <> value 10
     <> help "period of heartbeats from fetcher to make WS keep flake association with fetcher"
   )
 

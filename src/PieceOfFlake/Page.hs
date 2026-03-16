@@ -5,6 +5,9 @@ module PieceOfFlake.Page where
 import Data.Aeson ( encode )
 import Data.Map.Strict (elems)
 import PieceOfFlake.CmdArgs
+    ( WsCmdArgs(logLevel, fetcherHeartbeatPeriod, noSubmitionHeartbeat,
+                baseUrl),
+      StaticCacheSeconds )
 import PieceOfFlake.Flake
     ( FlakeUrl,
       Flake(..),
@@ -26,43 +29,26 @@ import PieceOfFlake.Prelude hiding (Map, error, pi, Handler)
 import PieceOfFlake.Stats ( greadTraVar, renderRepoStats )
 import PieceOfFlake.Th ( includeFile )
 import PieceOfFlake.WebService
+    ( FetcherAutoConfig(..),
+      FetcherHeartbeat(fetcherSecret),
+      FetcherSecret,
+      Period(Period) )
 import PieceOfFlake.Yesod
-    ( ContentEncoding(Br, Gzip),
+    ( bulmaLayout,
+      clientAdrToDec4,
+      getClientAdr,
+      mp3Mime,
+      sendStaticBs,
+      staticFile,
+      ContentEncoding(Br, Gzip),
       Mime(Mime),
       Ts(Ts),
-      staticFile,
-      sendStaticBs,
-      mp3Mime,
-      bulmaLayout,
-      clientAdrToDec4,
-      getClientAdr )
+      Unit(..) )
+
 import StmContainers.Map ( lookup )
 import Text.Blaze.Internal ( MarkupM )
 import Yesod.Core
-    ( Yesod(defaultLayout, shouldLogIO, maximumContentLength,
-            makeSessionBackend, approot),
-      RenderRoute(renderRoute),
-      TypedContent,
-      HandlerFor,
-      Html,
-      Approot(ApprootMaster),
-      WidgetFor,
-      ToWidgetHead(toWidgetHead),
-      ToWidgetBody(toWidgetBody),
-      mkYesod,
-      parseRoutes,
-      typeSvg,
-      typeJavascript,
-      typeCss,
-      typeXml,
-      typePlain,
-      getYesod,
-      setTitle,
-      whamlet,
-      hamlet,
-      requireCheckJsonBody,
-      invalidArgs,
-      permissionDenied )
+
 
 data Ypp
   = Ypp
@@ -653,11 +639,11 @@ postFindFlakesR = do
   where
     go repo = findFlakes repo.repoStats repo.flakes repo.flakeIndex
 
-postFetcherHeartbeatR :: Handler ()
+postFetcherHeartbeatR :: Handler Unit
 postFetcherHeartbeatR = do
   Ypp { repo } <- getYesod
   requireCheckJsonBody >>= \fhb ->
-    verifyFetcher fhb.fetcherSecret (fetcherIsAlive repo fhb)
+    verifyFetcher fhb.fetcherSecret (fetcherIsAlive repo fhb >> pure Unit)
 
 getFetcherAutoConfigR :: Handler FetcherAutoConfig
 getFetcherAutoConfigR = do

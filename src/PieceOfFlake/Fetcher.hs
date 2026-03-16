@@ -43,11 +43,16 @@ import PieceOfFlake.Req
       dynReq' )
 
 import PieceOfFlake.WebService
+    ( FetcherAutoConfig(httpMinTimeout, heartbeatPeriod),
+      FetcherHeartbeat(fetcherSecret, FetcherHeartbeat, fetcherId,
+                       workingOn),
+      FetcherSecret,
+      Period(Period, unPeriod) )
 import System.Exit ( ExitCode(ExitFailure, ExitSuccess) )
 import System.Process ( callProcess, readProcess, readProcessWithExitCode )
 import Text.Regex.TDFA ( AllTextSubmatches(getAllTextSubmatches), (=~) )
 import UnliftIO.Concurrent ( ThreadId, forkFinally, killThread )
-import UnliftIO.Exception
+import UnliftIO.Exception ( bracket )
 import UnliftIO.Retry
     ( capDelay,
       fibonacciBackoff,
@@ -366,7 +371,7 @@ runFetcher :: PoF m => FetcherCmdArgs -> FetcherSecret -> m ()
 runFetcher fa fsec = do
   fac <- loadFetcherAutoConf fa.webServiceUrl
   let serviceUrl = setResponseTimeout fa.webServiceUrl . coerce . (1 + ) $ untag fac.httpMinTimeout
-  $(logInfo) $ "Fetcher " <> show fa.fetcherId <> " started for " <> show serviceUrl
+  $(logInfo) $ "Fetcher " <> show fa.fetcherId <> " started for " <> show serviceUrl <> " with " <> show fac
   ca <- nixCurrentArch
   forever $ do
     recoverAll
@@ -405,7 +410,7 @@ sendHeartbeat fu = do
       , fetcherSecret = ctx.fetcherSecret
       }
 
-loadFetcherAutoConf :: MonadIO m => DynamicUrl -> m FetcherAutoConfig
+loadFetcherAutoConf :: PoF m => DynamicUrl -> m FetcherAutoConfig
 loadFetcherAutoConf serviceUrl = do
   r <- runReq defaultHttpConfig $ dynReq' GET serviceUrl (\ur -> ur /: "fetcher" /: "config") NoReqBody jsonResponse
   pure $ responseBody r

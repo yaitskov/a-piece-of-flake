@@ -4,7 +4,17 @@ import Data.Acid ( AcidState )
 import ListT qualified as L
 import PieceOfFlake.Acid ( AcidFlakes )
 import PieceOfFlake.Flake
+    ( FlakeUrl(FlakeUrl),
+      Flake(indexedAt, FlakeIndexed, submitionFetchedAt, FlakeFetched,
+            BadFlake, FlakeIsBeingFetched, SubmittedFlake, submittedAt,
+            submittedFrom, fetcherId, flakeUrl, fetcherRespondedAt),
+      FetcherId,
+      IpAdr(..),
+      MetaFlake,
+      RawFlakeUrl(..) )
 import PieceOfFlake.CmdArgs
+    ( WsCmdArgs(allowResubmitIndexedFlakeIn, fetcherHeartbeatPeriod,
+                badFlakeMaxAge, allowResubmitBadFlakeIn) )
 import PieceOfFlake.Index ( FlakeIndex, indexNewFlake )
 import PieceOfFlake.Prelude hiding (Map, show)
 import PieceOfFlake.Prelude qualified as P
@@ -14,10 +24,11 @@ import PieceOfFlake.Stats
       addTimeDif )
 import PieceOfFlake.Stm ( newTQueueIO, readTQueue, writeTQueue, TQueue, atomicalog )
 import PieceOfFlake.WebService
-
+    ( FetcherHeartbeat(fetcherId), FetcherSecret )
 import StmContainers.Map
     ( Map, delete, insert, listTNonAtomic, lookup, newIO )
 import Text.Regex.TDFA ( (=~) )
+import UnliftIO.Exception (bracket_)
 
 data FetcherState
   = FetcherState
@@ -37,6 +48,7 @@ data FlakeRepo
   , fetcherQueue :: TQueue (Maybe FlakeUrl)
   , fetcherQueueLen :: TVar Int
   , acidQueue :: TQueue (FlakeUrl, Flake)
+  , pollingFetchers :: TVar Int
   }
 
 mkFlakeRepo :: MonadIO m =>
@@ -53,7 +65,8 @@ mkFlakeRepo fetSec cmdA fi flakesMap acidFlakeStorage rs = do
       newIO <*>
       newTQueueIO <*>
       newTVarIO 0 <*>
-      newTQueueIO
+      newTQueueIO <*>
+      newTVarIO 0
 
 trySubmitFlakeToRepo :: PoF m => IpAdr -> FlakeRepo -> FlakeUrl -> m (Either Text Flake)
 trySubmitFlakeToRepo ip fr fu = do
@@ -97,9 +110,16 @@ trySubmitFlakeToRepo ip fr fu = do
             lift $ insert f fu fr.flakes
             pure $ Right f
 
+stmBracket_ :: PoF m => STM a -> STM b -> WriterLoggingT STM c -> m c
+stmBracket_ init' recycle mainAction =
+  bracket_ (atomically init') (atomically recycle) (atomicalog mainAction)
+
 popFlakeSubmition :: PoF m => FlakeRepo -> FetcherId -> m (Maybe FlakeUrl)
-popFlakeSubmition fr ftid = do
-  atomicalog (popFlakeSubmitionStm ftid fr) >>= mapM
+popFlakeSubmition fr ftid =
+  stmBracket_
+    (modifyTVar' fr.pollingFetchers (1 + ))
+    (modifyTVar' fr.pollingFetchers ((-1) + ))
+    (popFlakeSubmitionStm ftid fr) >>= mapM
     (\(fu, Tagged ifq) -> do
        addTimeDif fr.repoStats.meanTimeInFetchQueue ifq
        pure fu)
@@ -240,10 +260,7 @@ addFetchedFlake :: PoF m =>
   m (Maybe FlakeUrl)
 addFetchedFlake fr ftid (fu, fetchedFlake) = do
   mapM_ (addTimeDif fr.repoStats.meanFetchTime) =<< atomicalog go
-  atomicalog (popFlakeSubmitionStm ftid fr) >>= mapM
-    (\(fu', Tagged sa) -> do
-       addTimeDif fr.repoStats.meanTimeInFetchQueue sa
-       pure fu')
+  popFlakeSubmition fr ftid
   where
     go = do
       lift (lookup fu fr.flakes) >>= \case
@@ -281,17 +298,17 @@ addFetchedFlake fr ftid (fu, fetchedFlake) = do
           $(logError) $ "Error flake " <> P.show fu <> " is missing in map"
           pure Nothing
 
-sendEmptyFlakeSubmition ::
-  PoF m => FlakeRepo -> Tagged NoSubmitionHeartbeatSec Second -> m ()
-sendEmptyFlakeSubmition fr (Tagged d) = do
-  threadDelay d
+sendEmptyFlakeSubmition :: PoF m => FlakeRepo ->  m ()
+sendEmptyFlakeSubmition fr =
   atomicalog $ do
     fql <- lift $ readTVar fr.fetcherQueueLen
     when (fql == 0) $ do
-      $(logInfo) "Send empty Flake Submition"
-      lift $ do
-        writeTQueue fr.fetcherQueue Nothing
-        modifyTVar' fr.fetcherQueueLen (1 +)
+      numOfBlockedThreads <- lift $ readTVar fr.pollingFetchers
+      $(logInfo) $ "Send " <> P.show numOfBlockedThreads <> " empty Flake Submition(s)"
+      replicateM_ numOfBlockedThreads $ do
+        lift $ do
+          writeTQueue fr.fetcherQueue Nothing
+          modifyTVar' fr.fetcherQueueLen (1 +)
 
 selectBadOldFlakes :: MonadIO m => FlakeRepo -> m [ FlakeUrl ]
 selectBadOldFlakes fr =
