@@ -11,14 +11,6 @@
       url = "github:yaitskov/upload-doc-to-hackage";
       flake = false;
     };
-    hnix-store = {
-      url = "git+https://github.com/yaitskov/hnix-store.git?ref=cryptonite-ghost&submodules=1";
-      flake = false;
-    };
-    hnix = {
-      url = "github:yaitskov/hnix/rip-crytonite";
-      flake = false;
-    };
     ring-buffer = {
       url = "github:yaitskov/ring-buffer";
       flake = false;
@@ -34,23 +26,10 @@
         cas = import c {};
         packageName = "a-piece-of-flake";
         hnix-overlay = final: prev: {
-          hnix-store-json =
-            dontCheck
-              (final.callCabal2nix "hnix-store-json" "${inputs.hnix-store}/hnix-store-json" { });
-          hnix-store-tests =
-            final.callCabal2nix "hnix-store-tests" "${inputs.hnix-store}/hnix-store-tests" { };
-          hnix-store-nar =
-            final.callCabal2nix "hnix-store-nar" "${inputs.hnix-store}/hnix-store-nar" { };
-          hnix-store-core =
-            final.callCabal2nix "hnix-store-core" "${inputs.hnix-store}/hnix-store-core" { };
           trace-embrace =
             final.callCabal2nix "trace-embrace" inputs.te { };
           add-dependent-file =
             final.callCabal2nix "add-dependent-file" inputs.adf { };
-          hnix-store-remote =
-            dontHaddock
-              (final.callCabal2nix "hnix-store-remote" "${inputs.hnix-store}/hnix-store-remote" { });
-          hnix = dontCheck (final.callCabal2nix "hnix" inputs.hnix { });
           ring-buffer = (final.callCabal2nix "ring-buffer" inputs.ring-buffer { });
           non-negative-time-diff =
             (drv:
@@ -135,11 +114,6 @@
         inherit (pkgs.haskell.lib) dontHaddock dontCheck;
         haskellPackages = pkgs.haskell.packages.${cas.ghc}.extend(hnix-overlay);
       in {
-        # haskellProjects.default = {
-        #   packages = {
-        #     hnix.source = inputs.hnix;
-        #   };
-        # };
         packages.${packageName} =
           if cas.static then
             mkStatic packageName

@@ -117,7 +117,6 @@ library
     , filepath                < 2
     , full-text-search        < 1
     , generics-sop            < 1
-    , hnix                    < 1
     , hostname                < 2
     , http-types              < 1
     , lens                    < 6

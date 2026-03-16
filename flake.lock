@@ -81,42 +81,6 @@
         "type": "github"
       }
     },
-    "hnix": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1770925770,
-        "narHash": "sha256-TKrCmRafhyjftPeVj/Y9cyWNsCPAayJdvmjxsePoIaU=",
-        "owner": "yaitskov",
-        "repo": "hnix",
-        "rev": "d893dccb3e3ffe17f2e3b331ef10680a4c2feb59",
-        "type": "github"
-      },
-      "original": {
-        "owner": "yaitskov",
-        "ref": "rip-crytonite",
-        "repo": "hnix",
-        "type": "github"
-      }
-    },
-    "hnix-store": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1770835349,
-        "narHash": "sha256-++9g8bZUAbuvpRkAxhT6s6VPs3HQapl/beEoZ3HBI0s=",
-        "ref": "cryptonite-ghost",
-        "rev": "70f1645ef2032dca5440020090a4f5bcc4dae8ce",
-        "revCount": 867,
-        "submodules": true,
-        "type": "git",
-        "url": "https://github.com/yaitskov/hnix-store.git"
-      },
-      "original": {
-        "ref": "cryptonite-ghost",
-        "submodules": true,
-        "type": "git",
-        "url": "https://github.com/yaitskov/hnix-store.git"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1770195405,
@@ -186,8 +150,6 @@
         "adf": "adf",
         "c": "c_2",
         "flake-utils": "flake-utils_2",
-        "hnix": "hnix",
-        "hnix-store": "hnix-store",
         "nixpkgs": "nixpkgs_2",
         "non-negative-time-diff": "non-negative-time-diff",
         "ring-buffer": "ring-buffer",
