@@ -25,16 +25,12 @@ extra-source-files:
     -- brotli
     assets/favicon.svg.br
     assets/github.svg.br
-    assets/sitemap.xml.br
-    assets/github.svg.br
     assets/flake.svg.br
     assets/app.js.br
     assets/style.css.br
     assets/bulma.min.css.br
     -- gzipped
     assets/favicon.svg.gz
-    assets/github.svg.gz
-    assets/sitemap.xml.gz
     assets/github.svg.gz
     assets/flake.svg.gz
     assets/app.js.gz
@@ -132,7 +128,7 @@ library
     , mtl                     < 3
     , network                 < 4
     , non-empty               < 1
-    , non-negative-time-diff  > 0.0.1 && < 1
+    , non-negative-time-diff  >= 0.0.2 && < 1
     , prettyprinter           < 2
     , process                 < 2
     , psqueues                < 1
