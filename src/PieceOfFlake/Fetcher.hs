@@ -15,13 +15,6 @@ import Data.Map.Strict qualified as M
 import Data.Text qualified as T
 import PieceOfFlake.Aeson ( Some, someToList )
 import PieceOfFlake.CmdArgs
-    ( FetcherSecret,
-      FetcherCmdArgs(looseFlakes, rawNixCacheErrMaxAge,
-                     rawNixCacheMaxAge, rawNixCache, runNixGCIfUsedMoreThan, fetcherId),
-      RawNixCacheMaxAge,
-      RawNixCacheErrorMaxAge,
-      Percent,
-      parsePercent )
 import PieceOfFlake.Flake
     ( FlakeUrl(..),
       Architecture(..),
@@ -32,20 +25,29 @@ import PieceOfFlake.Flake.Repo ( FetcherReq(FetcherReq) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Req
     ( DynamicUrl,
-      POST(POST),
-      ReqBodyJson(ReqBodyJson),
-      HttpException(VanillaHttpException),
-      HttpConfig(httpConfigRetryJudge, httpConfigRetryJudgeException),
+      setResponseTimeout,
+      (/:),
       defaultHttpConfig,
+      isStatusCodeException,
       jsonResponse,
       responseBody,
+      responseStatusCode,
       runReq,
+      GET(GET),
+      HttpConfig(httpConfigRetryJudge, httpConfigRetryJudgeException),
+      HttpException(VanillaHttpException),
+      NoReqBody(NoReqBody),
+      POST(POST),
+      ReqBodyJson(ReqBodyJson),
       dynReq,
-      isStatusCodeException,
-      responseStatusCode )
+      dynReq' )
+
+import PieceOfFlake.WebService
 import System.Exit ( ExitCode(ExitFailure, ExitSuccess) )
 import System.Process ( callProcess, readProcess, readProcessWithExitCode )
 import Text.Regex.TDFA ( AllTextSubmatches(getAllTextSubmatches), (=~) )
+import UnliftIO.Concurrent ( ThreadId, forkFinally, killThread )
+import UnliftIO.Exception
 import UnliftIO.Retry
     ( capDelay,
       fibonacciBackoff,
@@ -57,6 +59,8 @@ import UnliftIO.Directory
       createDirectoryIfMissing,
       removeFile )
 import System.FilePath ( (</>) )
+
+
 
 showDigest :: ByteString -> String
 showDigest = BS8.unpack . convertToBase Base16
@@ -146,6 +150,7 @@ data FetcherConf
   , fetcherSecret :: FetcherSecret
   , fetcherArgs :: FetcherCmdArgs
   , flakeLoser :: Maybe (FlakeUrl, Either Text MetaFlake) -> Maybe (FlakeUrl, Either Text MetaFlake)
+  , confFromWs :: FetcherAutoConfig
   }
 
 type FetcherM m = (MonadReader FetcherConf m, PoF m)
@@ -344,7 +349,12 @@ uploadFlakeAndFetch f = do
   $(logDebug) $ "Response from WS for " <> show (fmap fst f) <>  ": "   <> show (responseBody jr)
   case responseBody jr of
     Nothing -> uploadFlakeAndFetch Nothing
-    Just fu -> catchAny (go fctx fu) (onEx fctx fu)
+    Just fu ->
+      bracket
+        (launchHeartbeats fu)
+        killThread
+        (\_hbTid -> catchAny (go fctx fu) (onEx fctx fu))
+
   where
     onEx fctx fu e = do
       $(logError) $ "nix failed for " <> show fu <> " with " <> show e
@@ -352,8 +362,10 @@ uploadFlakeAndFetch f = do
     go fctx fu =
       uploadFlakeAndFetch . fctx.flakeLoser . Just . (fu,) . Right =<< metaFlakeFromUrl fu
 
-runFetcher :: PoF m => DynamicUrl -> FetcherCmdArgs -> FetcherSecret -> m ()
-runFetcher serviceUrl fa fsec = do
+runFetcher :: PoF m => FetcherCmdArgs -> FetcherSecret -> m ()
+runFetcher fa fsec = do
+  fac <- loadFetcherAutoConf fa.webServiceUrl
+  let serviceUrl = setResponseTimeout fa.webServiceUrl . coerce . (1 + ) $ untag fac.httpMinTimeout
   $(logInfo) $ "Fetcher " <> show fa.fetcherId <> " started for " <> show serviceUrl
   ca <- nixCurrentArch
   forever $ do
@@ -361,9 +373,39 @@ runFetcher serviceUrl fa fsec = do
       (capDelay (toMs (6 :: Second)) (fibonacciBackoff (toMs (1 :: Second))))
       (\_ ->
          runReaderT (uploadFlakeAndFetch Nothing)
-           $ FetcherConf serviceUrl ca fsec fa looseF)
+           $ FetcherConf serviceUrl ca fsec fa looseF fac)
   where
     looseF :: forall a. Maybe a -> Maybe a
     looseF = if untag fa.looseFlakes
       then const Nothing
       else id
+
+launchHeartbeats :: FetcherM m => FlakeUrl -> m ThreadId
+launchHeartbeats fu = do
+  ctx <- ask
+  tid <- forkFinally
+    (forever $ do
+      sendHeartbeat fu
+      threadDelay . unPeriod $ untag ctx.confFromWs.heartbeatPeriod)
+    (\case
+        Left e -> $(logError) $ "Fetcher Heartbeat thread ended: " <> show e
+        Right () -> $(logInfo) "Fetcher Heartbeat thread ended without errors")
+  $(logInfo) $ "Fetcher Heartbeat thread is forked " <> show tid
+  pure tid
+
+sendHeartbeat :: FetcherM m => FlakeUrl -> m ()
+sendHeartbeat fu = do
+  ctx <- ask
+  responseBody <$> runReq defaultHttpConfig
+     (dynReq' POST ctx.fetUrl (\u -> u /: "fetcher" /: "heartbeat") (ReqBodyJson $ fhb ctx) jsonResponse)
+  where
+    fhb ctx = FetcherHeartbeat
+      { fetcherId = ctx.fetcherArgs.fetcherId
+      , workingOn = fu
+      , fetcherSecret = ctx.fetcherSecret
+      }
+
+loadFetcherAutoConf :: MonadIO m => DynamicUrl -> m FetcherAutoConfig
+loadFetcherAutoConf serviceUrl = do
+  r <- runReq defaultHttpConfig $ dynReq' GET serviceUrl (\ur -> ur /: "fetcher" /: "config") NoReqBody jsonResponse
+  pure $ responseBody r

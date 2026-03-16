@@ -127,7 +127,6 @@ consumeIndexQueue rs fs fi = do
              addTimeDif rs.meanTimeInIndexQueue inIndexQueue
         ) r
 
-
 indexNewFlake :: (MonadLogger (t STM), MonadTrans t) => FlakeIndex -> FlakeUrl -> t STM ()
 indexNewFlake fi fu = do
   iql <- lift $ do

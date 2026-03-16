@@ -5,7 +5,6 @@ module PieceOfFlake.Page where
 import Data.Aeson ( encode )
 import Data.Map.Strict (elems)
 import PieceOfFlake.CmdArgs
-    ( WsCmdArgs(logLevel), FetcherSecret, BaseUrl, StaticCacheSeconds )
 import PieceOfFlake.Flake
     ( FlakeUrl,
       Flake(..),
@@ -20,11 +19,13 @@ import PieceOfFlake.Flake.Repo
       trySubmitFlakeToRepo,
       popFlakeSubmition,
       addFetchedFlake,
+      fetcherIsAlive,
       validateRawFlakeUrl )
 import PieceOfFlake.Index ( findFlakes, listQueryCache, FlakeIndex (searchRequestCounter, indexerQueueLen) )
 import PieceOfFlake.Prelude hiding (Map, error, pi, Handler)
 import PieceOfFlake.Stats ( greadTraVar, renderRepoStats )
 import PieceOfFlake.Th ( includeFile )
+import PieceOfFlake.WebService
 import PieceOfFlake.Yesod
     ( ContentEncoding(Br, Gzip),
       Mime(Mime),
@@ -63,13 +64,10 @@ import Yesod.Core
       invalidArgs,
       permissionDenied )
 
-
-
 data Ypp
   = Ypp
     { repo :: FlakeRepo
     , staticCache :: Tagged StaticCacheSeconds Word32
-    , baseUrl :: Tagged BaseUrl Text
     }
 
 mkYesod "Ypp" [parseRoutes|
@@ -82,6 +80,8 @@ mkYesod "Ypp" [parseRoutes|
 /search SearchR GET
 /stats StatsR GET
 /about AboutR GET
+/fetcher/heartbeat FetcherHeartbeatR POST
+/fetcher/config FetcherAutoConfigR GET
 /flake/#FlakeUrl FlakeR GET
 /flake/status/#FlakeUrl FlakeStatusR GET
 /publication PublicationR GET
@@ -97,7 +97,7 @@ mkYesod "Ypp" [parseRoutes|
 |]
 
 instance Yesod Ypp where
-  approot = ApprootMaster $ untag . baseUrl
+  approot = ApprootMaster $ untag . baseUrl . wsArgs . repo
   makeSessionBackend _ = pure Nothing
   maximumContentLength _ = pure . \case
     Nothing -> 1
@@ -588,12 +588,12 @@ packageInfoToWidget (pi :: PackageInfo) =
 
 navBar :: WidgetFor Ypp ()
 navBar = do
-  Ypp { baseUrl } <- getYesod
+  Ypp { repo } <- getYesod
   toWidgetBody [hamlet|
          <nav class=navbar role=navigation aria-label="main navigation">
            <div class=navbar-brand>
              <a class="navbar-item has-text-weight-bold"
-                href=#{untag baseUrl}>
+                href=#{untag repo.wsArgs.baseUrl}>
                 <img src="/favicon.svg">
                 A Piece of Flake
              <a role=button aria-label=menu aria-expanded=false
@@ -652,3 +652,17 @@ postFindFlakesR = do
   requireCheckJsonBody >>= go repo
   where
     go repo = findFlakes repo.repoStats repo.flakes repo.flakeIndex
+
+postFetcherHeartbeatR :: Handler ()
+postFetcherHeartbeatR = do
+  Ypp { repo } <- getYesod
+  requireCheckJsonBody >>= \fhb ->
+    verifyFetcher fhb.fetcherSecret (fetcherIsAlive repo fhb)
+
+getFetcherAutoConfigR :: Handler FetcherAutoConfig
+getFetcherAutoConfigR = do
+  Ypp { repo } <- getYesod
+  pure FetcherAutoConfig
+    { heartbeatPeriod = Period <$> repo.wsArgs.fetcherHeartbeatPeriod
+    , httpMinTimeout = Period <$> repo.wsArgs.noSubmitionHeartbeat
+    }

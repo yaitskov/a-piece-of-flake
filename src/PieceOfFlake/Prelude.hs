@@ -18,7 +18,7 @@ import Data.Aeson as X ( FromJSON, ToJSON )
 import Data.Tagged as X
 import Data.Time.Clock.NonNegativeTimeDiff as X
 import Data.Time.Units as X
-import Debug.TraceEmbrace as X hiding (PackageName, Error, a)
+import Debug.TraceEmbrace as X hiding (PackageName, Error, a, u)
 import GHC.TypeLits as X (symbolVal)
 import Refined as X (unrefine, refine, refineTH, Refined, FromTo)
 import Relude as X hiding (Handle, intercalate)

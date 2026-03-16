@@ -11,6 +11,7 @@ import PieceOfFlake.Flake ( FetcherId(..) )
 import PieceOfFlake.Prelude
 import PieceOfFlake.Prelude qualified as P
 import PieceOfFlake.Req ( DynamicUrl(UrlHttp), http, port, parseUrl )
+import PieceOfFlake.WebService
 import Text.Show ( Show(show) )
 
 data HttpPort
@@ -20,7 +21,6 @@ data AcidFlakesPath
 data StaticCacheSeconds
 data RawNixCacheOutput
 data BaseUrl
-data NoSubmitionHeartbeatSec
 data ResubmitPeriod
 type IndexQueryCacheSize = "index-query-cache-size"
 type BadFlakeMaxAge = "bad-flake-max-age"
@@ -30,9 +30,6 @@ newtype RingBufferSize = RingBufferSize (Refined (FromTo 1 12) Int)
 instance Show RingBufferSize where
   show = P.show . unrefine . coerce
 
-newtype FetcherSecret = FetcherSecret Text deriving (Eq, Generic, FromJSON, ToJSON)
-instance Show FetcherSecret where
-  show _ = "****"
 
 data WsCmdArgs
   = WsCmdArgs
@@ -50,6 +47,7 @@ data WsCmdArgs
     , ringBufferSize :: RingBufferSize
     , badFlakeMaxAge :: Tagged BadFlakeMaxAge Second
     , allowResubmitIndexedFlakeIn :: Tagged ResubmitPeriod NominalDiffTime
+    , fetcherHeartbeatPeriod :: Tagged FetcherHeartbeatPeriod Second
     }
   deriving Show
 
@@ -63,7 +61,6 @@ data FetcherCmdArgs
     , rawNixCache :: Tagged RawNixCacheOutput (Maybe FilePath)
     , fetcherId :: FetcherId
     , fetcherSecretPath :: Tagged FetcherSecret FilePath
-    , noSubmitionHeartbeat :: Tagged NoSubmitionHeartbeatSec Second
     , rawNixCacheMaxAge :: Tagged RawNixCacheMaxAge NominalDiffTime
     , rawNixCacheErrMaxAge :: Tagged RawNixCacheErrorMaxAge NominalDiffTime
     , logLevel :: LogLevel
@@ -95,9 +92,9 @@ execWithArgs a args = a =<< liftIO (handleParseResult $ execParserPure defaultPr
       baseUrlO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
       allowResubmitBadFlakeInO <*> logLevelO <*>
       indexQueryCacheSizeO <*> ringBufferSizeO <*> badFlakeMaxAgeO <*>
-      allowResubmitIndexedFlakeInO)
+      allowResubmitIndexedFlakeInO <*> fetcherHeartbeatPeriodO)
     fetcherP = FetcherJob <$> (FetcherCmdArgs <$> urlOption <*> rawNixCacheO <*>
-      customFetcherIdO <*> fetcherSecretPathO <*> noSubmitionHeartbeatO <*>
+      customFetcherIdO <*> fetcherSecretPathO <*>
       rawNixCacheMaxAgeO @RawNixCacheMaxAge (7 * 24 * 3600) <*>
       rawNixCacheMaxAgeO @RawNixCacheErrorMaxAge 800 <*>
       logLevelO <*> looseFlakesO <*> nixGcDiskUsedO)
@@ -192,6 +189,15 @@ badFlakeMaxAgeO = Tagged <$>
     <> showDefault
     <> value (8 * 3600)
     <> help "bad flake max age"
+  )
+
+fetcherHeartbeatPeriodO :: Parser (Tagged FetcherHeartbeatPeriod Second)
+fetcherHeartbeatPeriodO = Tagged <$>
+  option auto
+  ( long "fetcher-heartbeat"
+    <> showDefault
+    <> value 60
+    <> help "period of heartbeats from fetcher to make WS keep flake association with fetcher"
   )
 
 noSubmitionHeartbeatO :: Parser (Tagged NoSubmitionHeartbeatSec Second)

@@ -4,19 +4,7 @@ import Data.Acid ( AcidState )
 import ListT qualified as L
 import PieceOfFlake.Acid ( AcidFlakes )
 import PieceOfFlake.Flake
-    ( FlakeUrl(..),
-      RawFlakeUrl(..),
-      MetaFlake,
-      IpAdr,
-      FetcherId,
-      Flake(indexedAt, FlakeIndexed, SubmittedFlake, submittedAt,
-            FlakeIsBeingFetched, FlakeFetched, flakeUrl, BadFlake,
-            fetcherRespondedAt, submitionFetchedAt) )
 import PieceOfFlake.CmdArgs
-    ( WsCmdArgs(allowResubmitIndexedFlakeIn, badFlakeMaxAge,
-                allowResubmitBadFlakeIn),
-      FetcherSecret,
-      NoSubmitionHeartbeatSec )
 import PieceOfFlake.Index ( FlakeIndex, indexNewFlake )
 import PieceOfFlake.Prelude hiding (Map, show)
 import PieceOfFlake.Prelude qualified as P
@@ -25,11 +13,17 @@ import PieceOfFlake.Stats
                  fetchingFlakes, fetchedFlakes, meanFetchTime, submittedFlakes, meanTimeInFetchQueue),
       addTimeDif )
 import PieceOfFlake.Stm ( newTQueueIO, readTQueue, writeTQueue, TQueue, atomicalog )
+import PieceOfFlake.WebService
+
 import StmContainers.Map
     ( Map, delete, insert, listTNonAtomic, lookup, newIO )
 import Text.Regex.TDFA ( (=~) )
 
-newtype FetcherState = FetcherState { workingOn :: Maybe FlakeUrl }
+data FetcherState
+  = FetcherState
+  { workingOn :: Maybe FlakeUrl
+  , lastHeartbeatAt :: UtcBox
+  }
 
 data FlakeRepo
   = FlakeRepo
@@ -121,10 +115,10 @@ popFlakeSubmitionStm ftid fr =
     Nothing -> do
       $(logDebug) $ "Fetcher " <> P.show ftid <> " asks for flake url from scratch"
       fromScratch
-    Just (FetcherState Nothing) -> do
+    Just FetcherState { workingOn = Nothing } -> do
       $(logDebug) $ "Fetcher " <> P.show ftid <> " asks for flake url from scratch2"
       fromScratch
-    Just (FetcherState (Just lostFu)) -> do
+    Just FetcherState { workingOn = Just lostFu } -> do
       $(logWarn) $ "Fetcher " <> P.show ftid <> " asked for a next flake url, but "
         <> "has not responded about " <> P.show lostFu
       fetcherResume lostFu
@@ -179,22 +173,24 @@ popFlakeSubmitionStm ftid fr =
 
 deassocFlakeFromFetcher ::
   (MonadTrans t, Hashable key, MonadLogger (t STM), Show key) =>
-  FlakeUrl -> key -> Map key FetcherState -> t STM ()
-deassocFlakeFromFetcher fu ftid fetchers = do
+  UTCTime n -> FlakeUrl -> key -> Map key FetcherState -> t STM ()
+deassocFlakeFromFetcher now fu ftid fetchers = do
   lift (lookup ftid fetchers) >>= \case
     Nothing -> do
       $(logWarn) $ "Fetcher " <> P.show ftid <> " has no state"
-      lift $ insert (FetcherState Nothing) ftid fetchers
-    Just (FetcherState Nothing) ->
+      lift $ insert efs ftid fetchers
+    Just FetcherState { workingOn = Nothing } ->
       $(logWarn) $ "Fetcher " <> P.show ftid <> " was not associated with any flake"
-    Just (FetcherState (Just afu))
+    Just FetcherState { workingOn = Just afu }
       | afu == fu -> do
-         lift $ insert (FetcherState Nothing) ftid fetchers
+         lift $ insert efs ftid fetchers
          $(logDebug) $ "Fetcher " <> P.show ftid <> " is diassociated from flake " <> P.show afu
       | otherwise -> do
          $(logWarn) $ "Fetcher " <> P.show ftid <> " was diassociated with flake " <> P.show afu
            <> " but returned " <> P.show fu
-         lift $ insert (FetcherState Nothing) ftid fetchers
+         lift $ insert efs ftid fetchers
+  where
+    efs = FetcherState { workingOn = Nothing, lastHeartbeatAt = mkUtcBox now }
 
 assocFlakeWithFetcher :: (MonadTrans t, Hashable a, MonadLogger (t STM), Show a) =>
   UTCTime n -> FlakeUrl -> a -> Map a FetcherState -> Map FlakeUrl Flake -> t STM ()
@@ -202,15 +198,15 @@ assocFlakeWithFetcher now fu ftid fetchers flakes = do
   lift (lookup ftid fetchers) >>= \case
     Nothing -> do
       $(logDebug) $ "Fetcher " <> P.show ftid <> " got flake " <> P.show fu
-      lift $ insert (FetcherState $ Just fu) ftid fetchers
-    Just (FetcherState Nothing) -> do
+      lift $ insert FetcherState { workingOn = Just fu, lastHeartbeatAt = mkUtcBox now } ftid fetchers
+    Just FetcherState { workingOn = Nothing } -> do
       $(logDebug) $ "Fetcher " <> P.show ftid <> " got flake' " <> P.show fu
-      lift $ insert (FetcherState $ Just fu) ftid fetchers
-    Just (FetcherState (Just lostFu))
+      lift $ insert FetcherState { workingOn = Just fu, lastHeartbeatAt = mkUtcBox now } ftid fetchers
+    Just FetcherState { workingOn = Just lostFu }
       | lostFu == fu ->
           $(logDebug) $ "Fetcher " <> P.show ftid <> " resumes on " <> P.show fu
       | otherwise -> do
-          lift $ insert (FetcherState $ Just fu) ftid fetchers
+          lift $ insert FetcherState { workingOn = Just fu, lastHeartbeatAt = mkUtcBox now } ftid fetchers
           lift (lookup lostFu flakes) >>= \case
             Nothing ->
               $(logWarn) $ "Fetcher " <> P.show ftid <>
@@ -255,7 +251,7 @@ addFetchedFlake fr ftid (fu, fetchedFlake) = do
           | fu == exFu ->
             doAfter past $ \p -> do
               now <- lift $ getTimeAfter p
-              deassocFlakeFromFetcher fu ftid fr.fetchers
+              deassocFlakeFromFetcher now fu ftid fr.fetchers
               case fetchedFlake of
                 Left e -> do
                   lift $ do
@@ -325,3 +321,61 @@ validateRawFlakeUrl (RawFlakeUrl rfu) =
   if rfu =~ ("^github:[a-zA-Z0-9._-]+[/][a-zA-Z0-9._-]+$" :: Text)
   then pure $ FlakeUrl rfu
   else Nothing
+
+fetcherIsAlive :: PoF m => FlakeRepo -> FetcherHeartbeat -> m ()
+fetcherIsAlive fr fhb =
+  atomicalog $ do
+    now <- getCurrentTime
+    lift $ do
+      lookup fhb.fetcherId fr.fetchers >>= \case
+        Nothing ->
+          insert
+            FetcherState { workingOn = Nothing
+                         , lastHeartbeatAt = mkUtcBox now
+                         }
+            fhb.fetcherId fr.fetchers
+        Just ftst ->
+          insert ftst { lastHeartbeatAt = mkUtcBox now } fhb.fetcherId fr.fetchers
+
+resubmitFlakesFetchingByZombie :: PoF m => FlakeRepo -> m ()
+resubmitFlakesFetchingByZombie fr = do
+  fs <- liftIO (L.toList (listTNonAtomic fr.fetchers))
+  atomicalog $ do
+    forM_ fs $ \(ftid, ftst) -> do
+      case ftst.workingOn of
+        Nothing -> do
+          $(logInfo) $ "Delete state of "  <> P.show ftid <> " fetcher because of idling"
+          lift $ delete ftid fr.fetchers
+        Just wasWorkingOnFu -> do
+          doAfter ftst.lastHeartbeatAt $ \ha -> do
+            now <- getTimeAfter ha
+            let maxPeriod = (*2) . toNominal $ untag fr.wsArgs.fetcherHeartbeatPeriod
+            when (now `diffUTCTime` ha > maxPeriod) $ do
+              $(logWarn) $ "Fetcher " <> P.show ftid <> " must be dead since " <> P.show now
+              lift $ delete ftid fr.fetchers
+              lift (lookup wasWorkingOnFu fr.flakes) >>= \case
+                Nothing ->
+                  $(logError) $ "Fetcher " <> P.show ftid <> " was working an ghost flake: " <> P.show wasWorkingOnFu
+                Just fif@FlakeIsBeingFetched {}
+                  | fif.fetcherId /= ftid ->
+                      $(logError) $ "Failed to resubmit flake " <> P.show wasWorkingOnFu <>
+                        " due it is processed by another fetcher " <> P.show fif.fetcherId
+                  | fif.flakeUrl /= wasWorkingOnFu -> do
+                      $(logWarn) $ "Flake map is corrupted on" <>
+                        P.show wasWorkingOnFu <> " /= " <> P.show fif.flakeUrl
+                  | otherwise -> do
+                      $(logInfo) $ "Resubmit flake " <> P.show wasWorkingOnFu <>
+                        " after fetcher " <> P.show ftid <> " died"
+                      lift $ do
+                        insert
+                          SubmittedFlake
+                            { flakeUrl = wasWorkingOnFu
+                            , submittedAt = mkUtcBox now
+                            , submittedFrom = IpAdr "127.0.0.1"
+                            }
+                          wasWorkingOnFu fr.flakes
+                        modifyTVar' fr.fetcherQueueLen (1 +)
+                        writeTQueue fr.fetcherQueue $ Just wasWorkingOnFu
+                Just o ->
+                  $(logError) $ "Failed to resubmit flake " <> P.show wasWorkingOnFu <>
+                      " due it is not in IsBeingFetching state but " <> P.show o

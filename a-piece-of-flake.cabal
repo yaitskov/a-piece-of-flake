@@ -159,6 +159,7 @@ library
     PieceOfFlake.SubmitList
     PieceOfFlake.Th
     PieceOfFlake.TotalMath
+    PieceOfFlake.WebService
     PieceOfFlake.Yesod
   other-modules:
     Paths_a_piece_of_flake

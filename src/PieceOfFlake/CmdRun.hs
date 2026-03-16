@@ -5,27 +5,28 @@ import Data.ByteString.Char8 qualified as S8
 import Paths_a_piece_of_flake ( version )
 import PieceOfFlake.Acid ( loadFromDb, openFlakeDb, runPersistQueue )
 import PieceOfFlake.CmdArgs
-    ( FetcherSecret(..),
-      WsCmdArgs(baseUrl, indexQueryCacheSize, acidFlakes, ringBufferSize,
-                logLevel, fetcherSecretPath, noSubmitionHeartbeat, staticCache),
-      NoSubmitionHeartbeatSec,
+    ( WsCmdArgs(staticCache, indexQueryCacheSize, acidFlakes,
+                ringBufferSize, logLevel, fetcherSecretPath, noSubmitionHeartbeat, fetcherHeartbeatPeriod),
       CmdArgs(..),
-      FetcherCmdArgs(fetcherSecretPath, FetcherCmdArgs, webServiceUrl,
-                     noSubmitionHeartbeat, logLevel),
+      FetcherCmdArgs(fetcherSecretPath, FetcherCmdArgs, logLevel),
       SubmitListOfFlakesArgs(logLevel) )
 import PieceOfFlake.Fetcher ( runFetcher )
 import PieceOfFlake.Flake.Repo
-    ( FlakeRepo(flakeIndex, acidFlakes, acidQueue, repoStats, flakes),
-      mkFlakeRepo, removeOldBadFlakes,
-      sendEmptyFlakeSubmition )
+    ( FlakeRepo(flakeIndex, wsArgs, acidFlakes, acidQueue, repoStats,
+                flakes),
+      mkFlakeRepo,
+      removeOldBadFlakes,
+      sendEmptyFlakeSubmition,
+      resubmitFlakesFetchingByZombie )
 import PieceOfFlake.Http ( runWebService )
 import PieceOfFlake.Index
     ( mkFlakeIndex, loadIndexFromScratch, consumeIndexQueue )
 import PieceOfFlake.Page ( Ypp(Ypp) )
 import PieceOfFlake.Prelude
-import PieceOfFlake.Req ( setResponseTimeout )
 import PieceOfFlake.Stats ( mkRepoStats )
 import PieceOfFlake.SubmitList ( runSubmitList )
+import PieceOfFlake.WebService
+    ( FetcherSecret(..), NoSubmitionHeartbeatSec )
 import StmContainers.Map ( newIO )
 import UnliftIO.Concurrent ( forkFinally )
 import UnliftIO.Retry ( fibonacciBackoff, recoverAll )
@@ -42,33 +43,25 @@ initRepo fsec wsa = do
 launchBackgroundThreads :: PoF m =>
   Tagged NoSubmitionHeartbeatSec Second -> FlakeRepo -> m ()
 launchBackgroundThreads period fr = do
-  persisFlakeTid <- forkFinally
-    (forever $ do
-      recoverAll
-        (fibonacciBackoff 10000)
-        (\_ -> runPersistQueue fr.acidFlakes fr.acidQueue))
-    (\case
-        Left e -> $(logError) $ "Flake Persistence thread ended: " <> show e
-        Right () -> $(logInfo) "Flake Persistence thread ended without errors")
-  $(logInfo) $ "Flake persistence thread is forked " <> show persisFlakeTid
-  idxFlakeTid <- forkFinally
-    (forever $ consumeIndexQueue fr.repoStats fr.flakes fr.flakeIndex)
-    (\case
-        Left e -> $(logError) $ "Flake text search indexer thread ended: " <> show e
-        Right () -> $(logInfo) "Flake text search indexer thread without errors")
-  $(logInfo) $ "Flake text search indexer thread is forked " <> show idxFlakeTid
-  efsTid <- forkFinally
-    (forever $ sendEmptyFlakeSubmition fr period)
-    (\case
-        Left e -> $(logError) $ "Empty Submition thread ended: " <> show e
-        Right () -> $(logInfo) "Empty Submition thread ended without errors")
-  $(logInfo) $ "Empty Submition thread is forked " <> show efsTid
-  obfTid <- forkFinally
-    (forever $ removeOldBadFlakes fr)
-    (\case
-        Left e -> $(logError) $ "Old Bad Flake Collector thread ended: " <> show e
-        Right () -> $(logInfo) "Old Bad Flake Collector thread ended without errors")
-  $(logInfo) $ "Old Bad Flake Collector thread is forked " <> show obfTid
+  forkForever "Lost flake resubmition" $ do
+    resubmitFlakesFetchingByZombie fr
+    threadDelay . (* 3) $ untag fr.wsArgs.fetcherHeartbeatPeriod
+  forkForever "Flake persistence" $ do
+    recoverAll
+      (fibonacciBackoff 10000)
+      (\_ -> runPersistQueue fr.acidFlakes fr.acidQueue)
+  forkForever "Flake text search indexer"
+    $ consumeIndexQueue fr.repoStats fr.flakes fr.flakeIndex
+  forkForever "Empty Submition" $ sendEmptyFlakeSubmition fr period
+  forkForever "Old Bad Flake Collector" $ removeOldBadFlakes fr
+  where
+    forkForever thrName f = do
+      tid <- forkFinally
+        (forever f)
+        (\case
+            Left e -> $(logError) $ thrName <> " thread ended: " <> show e
+            Right () -> $(logInfo) $ thrName <> " thread ended without errors")
+      $(logInfo) $ thrName <> " thread is forked with tid: " <> show tid
 
 -- commented lines below are excuted via: @ghciwatch --enable-eval@
 -- $> import PieceOfFlake.CmdArgs
@@ -80,12 +73,11 @@ runCmd = \case
       $(logInfo) $ "Start WebService "  <> show ws
       fr <- (`initRepo` ws) =<< loadFetcherSecret ws.fetcherSecretPath
       launchBackgroundThreads ws.noSubmitionHeartbeat fr
-      runWebService ws $ Ypp fr ws.staticCache ws.baseUrl
-  FetcherJob fa@FetcherCmdArgs {} -> -- serUrl rawNixCache fid fSecPath reqTimeout miLogLevel) ->
-    let serUrl' = (setResponseTimeout fa.webServiceUrl $ untag fa.noSubmitionHeartbeat) in -- reqTimeout) in
+      runWebService ws $ Ypp fr ws.staticCache
+  FetcherJob fa@FetcherCmdArgs {} ->
       withLogs fa.logLevel $ do
         $(logInfo) $ "Start Fetcher "  <> show fa
-        runFetcher serUrl' fa =<< loadFetcherSecret fa.fetcherSecretPath
+        runFetcher fa =<< loadFetcherSecret fa.fetcherSecretPath
   SubmitListOfFlakes sla ->
     withLogs sla.logLevel $ runSubmitList sla
   PieceOfFlakeVersion ->
