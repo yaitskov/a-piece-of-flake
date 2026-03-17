@@ -36,8 +36,9 @@ in {
     };
     environment.systemPackages = [ pof ];
     systemd.services.a-piece-of-flake-fetcher = {
-      wantedBy = [ "network-online.target" ];
-      requires = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+      requires = [ "NetworkManager-wait-online.service" ];
+      after = [ "NetworkManager-wait-online.service" ];
       enable = true;
       path = [ pkgs.nix ];
 
