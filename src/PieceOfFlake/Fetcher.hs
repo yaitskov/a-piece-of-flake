@@ -1,4 +1,5 @@
 module PieceOfFlake.Fetcher where
+
 import Crypto.Hash.SHA1 (hashlazy)
 import Data.Aeson qualified as A
 import Data.Aeson
@@ -51,8 +52,7 @@ import PieceOfFlake.WebService
 import System.Exit ( ExitCode(ExitFailure, ExitSuccess) )
 import System.Process ( callProcess, readProcess, readProcessWithExitCode )
 import Text.Regex.TDFA ( AllTextSubmatches(getAllTextSubmatches), (=~) )
-import UnliftIO.Concurrent ( ThreadId, forkFinally, killThread )
-import UnliftIO.Exception ( bracket )
+import UnliftIO.Async ( withAsync )
 import UnliftIO.Retry
     ( capDelay,
       fibonacciBackoff,
@@ -64,7 +64,6 @@ import UnliftIO.Directory
       createDirectoryIfMissing,
       removeFile )
 import System.FilePath ( (</>) )
-
 
 
 showDigest :: ByteString -> String
@@ -300,6 +299,10 @@ rawPackageToPackageInfo pn rp =
   , broken = rp.broken
   }
 
+forkWhile :: MonadUnliftIO m => (t -> m a) -> (t -> m b) -> t -> m b
+forkWhile f m a = withAsync (f a) (\_ -> m a)
+
+
 metaFlakeFromUrl :: FetcherM m => FlakeUrl -> m MetaFlake
 metaFlakeFromUrl fu = do
   checkDiskFreeSpace
@@ -346,26 +349,25 @@ uploadFlakeAndFetch f = do
                   pure False
           ]
           (\_ ->
-              runReq (defaultHttpConfig
-                { httpConfigRetryJudgeException = \_ _ -> False
-                , httpConfigRetryJudge = \_ _ -> False
-                })
-              $ dynReq POST fctx.fetUrl "fetch-new-flake-submitions" rqb jsonResponse)
+              runReq noRetry $ dynReq POST fctx.fetUrl "fetch-new-flake-submitions" rqb jsonResponse)
   $(logDebug) $ "Response from WS for " <> show (fmap fst f) <>  ": "   <> show (responseBody jr)
   case responseBody jr of
     Nothing -> uploadFlakeAndFetch Nothing
-    Just fu ->
-      bracket
-        (launchHeartbeats fu)
-        killThread
-        (\_hbTid -> catchAny (go fctx fu) (onEx fctx fu))
-
+    Just fu -> catchAny (go fctx fu) (onEx fctx fu)
   where
     onEx fctx fu e = do
       $(logError) $ "nix failed for " <> show fu <> " with " <> show e
       uploadFlakeAndFetch $ fctx.flakeLoser (Just (fu, Left $ show e))
     go fctx fu =
-      uploadFlakeAndFetch . fctx.flakeLoser . Just . (fu,) . Right =<< metaFlakeFromUrl fu
+      uploadFlakeAndFetch . fctx.flakeLoser . Just . (fu,) . Right
+      =<< forkWhile launchHeartbeats metaFlakeFromUrl fu
+
+noRetry :: HttpConfig
+noRetry =
+  defaultHttpConfig
+  { httpConfigRetryJudgeException = \_ _ -> False
+  , httpConfigRetryJudge = \_ _ -> False
+  }
 
 runFetcher :: PoF m => FetcherCmdArgs -> FetcherSecret -> m ()
 runFetcher fa fsec = do
@@ -385,23 +387,18 @@ runFetcher fa fsec = do
       then const Nothing
       else id
 
-launchHeartbeats :: FetcherM m => FlakeUrl -> m ThreadId
+launchHeartbeats :: FetcherM m => FlakeUrl -> m ()
 launchHeartbeats fu = do
+  $(logInfo) "Fetcher Heartbeat thread is forked"
   ctx <- ask
-  tid <- forkFinally
-    (forever $ do
-      sendHeartbeat fu
-      threadDelay . unPeriod $ untag ctx.confFromWs.heartbeatPeriod)
-    (\case
-        Left e -> $(logError) $ "Fetcher Heartbeat thread ended: " <> show e
-        Right () -> $(logInfo) "Fetcher Heartbeat thread ended without errors")
-  $(logInfo) $ "Fetcher Heartbeat thread is forked " <> show tid
-  pure tid
+  forever $ do
+    sendHeartbeat fu
+    threadDelay . unPeriod $ untag ctx.confFromWs.heartbeatPeriod
 
 sendHeartbeat :: FetcherM m => FlakeUrl -> m ()
 sendHeartbeat fu = do
   ctx <- ask
-  responseBody <$> runReq defaultHttpConfig
+  responseBody <$> runReq noRetry
      (dynReq' POST ctx.fetUrl (\u -> u /: "fetcher" /: "heartbeat") (ReqBodyJson $ fhb ctx) jsonResponse)
   where
     fhb ctx = FetcherHeartbeat
